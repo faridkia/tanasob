@@ -1,0 +1,131 @@
+"""
+Views for the accounts app.
+
+Authentication endpoints (register, login, me, change password) and the
+trainer-member assignment management endpoint (FR-TRN-2, FR-TRN-3).
+"""
+
+from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from common.permissions import IsAdmin
+
+from .models import TrainerMemberAssignment, User
+from .serializers import (
+    ChangePasswordSerializer,
+    LoginSerializer,
+    RegisterSerializer,
+    TrainerMemberAssignmentSerializer,
+    UpdateProfileSerializer,
+    UserSerializer,
+)
+
+
+def _tokens_for(user):
+    refresh = RefreshToken.for_user(user)
+    return {'refresh': str(refresh), 'access': str(refresh.access_token)}
+
+
+class RegisterView(generics.CreateAPIView):
+    """Register a new Member or Trainer (FR-AUTH-1)."""
+
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
+    permission_classes = [AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'tokens': _tokens_for(user),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class LoginView(APIView):
+    """Log in with email + password and receive JWT tokens (FR-AUTH-2)."""
+
+    permission_classes = [AllowAny]
+    serializer_class = LoginSerializer
+
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'tokens': _tokens_for(user),
+            }
+        )
+
+
+class MeView(generics.RetrieveUpdateAPIView):
+    """Get or update the current user's own profile (FR-AUTH-4)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+    def get_serializer_class(self):
+        if self.request.method in ('PUT', 'PATCH'):
+            return UpdateProfileSerializer
+        return UserSerializer
+
+
+class ChangePasswordView(APIView):
+    """Change the current user's password."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data['new_password'])
+        request.user.save()
+        return Response({'detail': 'Password updated successfully.'})
+
+
+class TrainerMemberAssignmentView(generics.ListCreateAPIView):
+    """List assignments and create a new trainer-member assignment (FR-TRN-2).
+
+    - Admins see/manage all assignments.
+    - Trainers see the members currently assigned to them (FR-TRN-3).
+    - Members see their own assigned trainers.
+    """
+
+    serializer_class = TrainerMemberAssignmentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = TrainerMemberAssignment.objects.select_related('member__user', 'trainer__user')
+        if user.is_admin_role:
+            return qs
+        if user.is_trainer:
+            return qs.filter(trainer__user=user)
+        return qs.filter(member__user=user)
+
+    def perform_create(self, serializer):
+        if not (self.request.user.is_admin_role or self.request.user.is_trainer):
+            raise PermissionDenied('Only admins or trainers can create assignments.')
+        serializer.save()
+
+
+class AssignmentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve / update (e.g. mark ENDED) / delete an assignment."""
+
+    serializer_class = TrainerMemberAssignmentSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return TrainerMemberAssignment.objects.all()

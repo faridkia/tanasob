@@ -1,0 +1,37 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python and Django
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+env/
+backend/db.sqlite3
+backend/*.sqlite3
+backend/*.sqlite3-*
+backend/staticfiles/
+backend/media/
+
+# JavaScript and frontend builds
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Tooling and operating-system files
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.DS_Store
+*.log
