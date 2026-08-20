@@ -5,8 +5,10 @@ All business endpoints live under the ``/api/`` prefix. Swagger UI is served
 at ``/api/docs/``.
 """
 
+from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve as serve_static
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -38,4 +40,9 @@ urlpatterns = [
     path('api/', include('notifications.urls')),
     path('api/', include('reports.urls')),
     path('api/', include('assistant.urls')),
+
+    # User-uploaded media (diet plan photos, ...). Served by Django itself —
+    # fine at this project's scale; not gated behind DEBUG since it's needed
+    # in the Docker deployment too (see frontend/nginx.conf's /media/ proxy).
+    re_path(r'^media/(?P<path>.*)$', serve_static, {'document_root': settings.MEDIA_ROOT}),
 ]

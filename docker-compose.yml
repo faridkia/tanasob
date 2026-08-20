@@ -10,6 +10,10 @@ services:
       ALLOWED_HOSTS: "*"
     ports:
       - "30081:8000"   # 8000-8013 are taken on the target server
+    volumes:
+      # Uploaded diet-plan photos, etc. — otherwise a `docker compose build`
+      # would wipe them (media/ is never baked into the image).
+      - media_data:/app/media
     restart: unless-stopped
 
   frontend:
@@ -22,3 +26,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  media_data:
