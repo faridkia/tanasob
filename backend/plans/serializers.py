@@ -23,10 +23,10 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
         model = WorkoutPlan
         fields = (
             'id', 'member', 'member_name', 'trainer', 'trainer_name',
-            'title', 'start_date', 'end_date', 'is_archived',
+            'title', 'start_date', 'end_date', 'is_archived', 'image',
             'items', 'created_at', 'updated_at',
         )
-        read_only_fields = ('id', 'trainer', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'trainer', 'image', 'created_at', 'updated_at')
 
     def create(self, validated_data):
         items_data = validated_data.pop('items')
@@ -45,6 +45,13 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
             for item in items_data:
                 WorkoutPlanItem.objects.create(workout_plan=instance, **item)
         return instance
+
+
+class WorkoutPlanImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkoutPlan
+        fields = ('image',)
+        extra_kwargs = {'image': {'required': True}}
 
 
 # ---- Diet Plan ----

@@ -532,50 +532,23 @@ input:focus, select:focus {
   gap: .6rem;
 }
 
-/* ---- Plan rows (trainer / member plans) ---- */
-.plan-row {
-  padding: .9rem 0;
-  border-bottom: 1px solid var(--border);
-  display: flex; gap: .75rem; justify-content: space-between; align-items: flex-start;
-}
-.plan-row:last-child { border-bottom: 0; }
-.plan-row strong { display: inline; font-size: .9rem; font-weight: 600; }
-.plan-row small { display: block; color: var(--muted); margin-top: .25rem; font-size: .76rem; }
-.plan-type {
-  font-size: .66rem;
-  font-weight: 600;
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  padding: .15rem .4rem;
-  margin-right: .4rem;
-  border-radius: var(--radius-sm);
-}
-.chip-list { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .55rem; }
-.chip-list span {
-  font-size: .7rem;
-  color: var(--ink-soft);
-  border: 1px solid var(--border);
-  padding: .2rem .4rem;
-  border-radius: var(--radius-sm);
-}
-
-/* ---- Diet plan list + modal ---- */
-.diet-row {
+/* ---- Plan list + detail modal (workout & diet plans) ---- */
+.plan-list-row {
   width: 100%;
   display: flex; align-items: center; gap: .75rem;
   padding: .7rem 0;
   border-bottom: 1px solid var(--border);
   text-align: right;
 }
-.diet-row:last-child { border-bottom: 0; }
-.diet-row:hover strong { color: var(--accent-ink); }
-.diet-row > div { min-width: 0; flex: 1; }
-.diet-row strong { display: block; font-size: .9rem; font-weight: 600; transition: color .12s; }
-.diet-row small {
+.plan-list-row:last-child { border-bottom: 0; }
+.plan-list-row:hover strong { color: var(--accent-ink); }
+.plan-list-row > div { min-width: 0; flex: 1; }
+.plan-list-row strong { display: block; font-size: .9rem; font-weight: 600; transition: color .12s; }
+.plan-list-row small {
   display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.diet-row-thumb {
+.plan-row-thumb {
   width: 42px; height: 42px;
   flex: none;
   border-radius: var(--radius-sm);
@@ -584,7 +557,7 @@ input:focus, select:focus {
   color: var(--accent-ink);
   display: grid; place-items: center;
 }
-.diet-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.plan-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
 .modal-overlay {
   position: fixed; inset: 0;
@@ -605,7 +578,7 @@ input:focus, select:focus {
   padding: 1.5rem;
 }
 .modal-close { position: absolute; top: 1rem; left: 1rem; }
-.diet-modal-image {
+.plan-modal-image {
   position: relative;
   aspect-ratio: 16 / 10;
   border-radius: var(--radius);
@@ -613,31 +586,31 @@ input:focus, select:focus {
   background: var(--bg);
   border: 1px solid var(--border);
 }
-.diet-modal-image img { width: 100%; height: 100%; object-fit: cover; }
-.diet-modal-placeholder {
+.plan-modal-image img { width: 100%; height: 100%; object-fit: cover; }
+.plan-modal-placeholder {
   width: 100%; height: 100%;
   display: grid; place-items: center; gap: .4rem;
   color: var(--muted-2);
   font-size: .8rem;
 }
-.diet-modal-uploading {
+.plan-modal-uploading {
   position: absolute; inset: 0;
   display: grid; place-items: center;
   background: rgba(10, 13, 18, .5);
   color: #fff; font-size: .85rem; font-weight: 600;
 }
-.diet-upload-button { width: 100%; margin-top: .75rem; }
+.plan-upload-button { width: 100%; margin-top: .75rem; }
 .modal-card h2 { font-size: 1.25rem; margin: 1.1rem 0 .2rem; }
-.diet-modal-meta { color: var(--muted); font-size: .82rem; margin-bottom: 1rem; }
-.diet-modal-items { display: flex; flex-direction: column; margin-bottom: 1rem; }
-.diet-modal-item {
+.plan-modal-meta { color: var(--muted); font-size: .82rem; margin-bottom: 1rem; }
+.plan-modal-items { display: flex; flex-direction: column; margin-bottom: 1rem; }
+.plan-modal-item {
   display: flex; align-items: center; justify-content: space-between; gap: .7rem;
   padding: .65rem 0;
   border-bottom: 1px solid var(--border);
 }
-.diet-modal-item:last-child { border-bottom: 0; }
-.diet-modal-item strong { display: block; font-size: .88rem; font-weight: 600; }
-.diet-modal-item small { display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem; }
+.plan-modal-item:last-child { border-bottom: 0; }
+.plan-modal-item strong { display: block; font-size: .88rem; font-weight: 600; }
+.plan-modal-item small { display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem; }
 
 /* ---- Membership QR card ---- */
 .qr-card {
