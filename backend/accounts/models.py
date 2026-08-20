@@ -7,6 +7,8 @@ Mapping to the SRS data model (section 6): User (6.1), Member (6.2),
 Trainer (6.3), TrainerMemberAssignment (6.4).
 """
 
+import uuid
+
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 
@@ -67,6 +69,10 @@ class Member(models.Model):
     gender = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Unguessable identifier encoded in the member's QR check-in card; kept
+    # separate from the primary key so the printed/displayed code can't be
+    # used to enumerate other members.
+    qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     def __str__(self):
         return f'Member: {self.user.full_name}'

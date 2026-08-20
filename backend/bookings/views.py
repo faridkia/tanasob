@@ -115,7 +115,12 @@ class AttendanceListView(generics.ListAPIView):
 
 
 class CheckInView(APIView):
-    """Member self check-in (FR-ATT-1) or trainer marks attendance."""
+    """Member self check-in (FR-ATT-1) or trainer marks attendance.
+
+    Trainers may identify the member either by ``member`` (id, picked from a
+    list) or by ``token`` (the value scanned from the member's QR check-in
+    card via `/auth/me/qr/`) — scanning skips the manual lookup entirely.
+    """
 
     def post(self, request):
         member = None
@@ -123,18 +128,26 @@ class CheckInView(APIView):
         if user.is_member:
             member = user.member_profile
         elif user.is_trainer:
-            member_id = request.data.get('member')
-            if not member_id:
-                return Response(
-                    {'member': 'Trainer must specify a member to check in.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             from accounts.models import Member
 
-            try:
-                member = Member.objects.get(pk=member_id)
-            except Member.DoesNotExist:
-                return Response({'member': 'Member not found.'}, status=status.HTTP_404_NOT_FOUND)
+            token = request.data.get('token')
+            member_id = request.data.get('member')
+            if token:
+                token = str(token).removeprefix('TANASOB-MEMBER:')
+                try:
+                    member = Member.objects.get(qr_token=token)
+                except (Member.DoesNotExist, ValueError):
+                    return Response({'token': 'QR code not recognized.'}, status=status.HTTP_404_NOT_FOUND)
+            elif member_id:
+                try:
+                    member = Member.objects.get(pk=member_id)
+                except Member.DoesNotExist:
+                    return Response({'member': 'Member not found.'}, status=status.HTTP_404_NOT_FOUND)
+            else:
+                return Response(
+                    {'member': 'Trainer must specify a member (or scan a QR code) to check in.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         else:
             raise PermissionDenied('Only members and trainers can check in.')
 

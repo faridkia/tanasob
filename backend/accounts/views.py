@@ -5,6 +5,10 @@ Authentication endpoints (register, login, me, change password) and the
 trainer-member assignment management endpoint (FR-TRN-2, FR-TRN-3).
 """
 
+import io
+
+import qrcode
+from django.http import HttpResponse
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -80,6 +84,26 @@ class MeView(generics.RetrieveUpdateAPIView):
         if self.request.method in ('PUT', 'PATCH'):
             return UpdateProfileSerializer
         return UserSerializer
+
+
+class MyQRCodeView(APIView):
+    """PNG QR code encoding the member's check-in token (FR-ATT scan flow).
+
+    Members display this on their phone; trainers scan it with
+    `/attendance/check-in/` (passing the decoded ``token``) to check them
+    into a session without looking anyone up manually.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_member:
+            raise PermissionDenied('Only members have a check-in QR code.')
+        token = request.user.member_profile.qr_token
+        image = qrcode.make(f'TANASOB-MEMBER:{token}')
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        return HttpResponse(buffer.getvalue(), content_type='image/png')
 
 
 class ChangePasswordView(APIView):

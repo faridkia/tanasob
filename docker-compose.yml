@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Production mode: no debug tracebacks leaking to a public server.
+      DJANGO_DEBUG: "False"
+      # Tighten this to the server's real domain/IP once known.
+      ALLOWED_HOSTS: "*"
+    ports:
+      - "30081:8000"   # 8000-8013 are taken on the target server
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    ports:
+      - "30080:80"     # open this one for the professor to browse
+    depends_on:
+      - backend
+    restart: unless-stopped

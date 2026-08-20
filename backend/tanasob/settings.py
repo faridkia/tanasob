@@ -9,8 +9,12 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -57,11 +61,13 @@ INSTALLED_APPS = [
     'messaging',
     'notifications',
     'reports',
+    'assistant',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # must be before CommonMiddleware
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # serves admin/DRF/Swagger static assets with DEBUG=False
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -148,6 +154,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -212,18 +224,36 @@ SPECTACULAR_SETTINGS = {
 
 
 # -------------------------------------------------------------------
-# CORS — allow the React dev server to call the API
+# CORS — allow the React dev server (and, in prod, an env-configured
+# origin) to call the API. In the Docker setup the frontend's nginx
+# reverse-proxies /api/ to this service, so the browser only ever talks to
+# one origin and CORS doesn't come into play there — this is a fallback for
+# serving the frontend from a different origin.
 # -------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-]
+] + [origin for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',') if origin]
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [origin for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if origin]
 
 
 # -------------------------------------------------------------------
 # Mock payment: 0.0 = always succeed. Raise it (e.g. 0.1) to test failures.
 # -------------------------------------------------------------------
 MOCK_PAYMENT_FAILURE_RATE = 0.0
+
+
+# -------------------------------------------------------------------
+# assistant app — AI chat. Works with any OpenAI-chat-completions-shaped
+# gateway by pointing AI_LLM_API_BASE at it (same contract as OpenAI,
+# DeepSeek, ArvanCloud AI Gateway, etc).
+# -------------------------------------------------------------------
+AI_LLM_API_BASE = os.environ.get('AI_LLM_API_BASE', '')
+AI_LLM_API_KEY = os.environ.get('AI_LLM_API_KEY', '')
+AI_LLM_MODEL = os.environ.get('AI_LLM_MODEL', '')
+AI_LLM_AUTH_SCHEME = os.environ.get('AI_LLM_AUTH_SCHEME', 'Bearer')
+AI_LLM_TIMEOUT = int(os.environ.get('AI_LLM_TIMEOUT', '60'))

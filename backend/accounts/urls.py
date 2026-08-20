@@ -8,6 +8,7 @@ urlpatterns = [
     path('register/', views.RegisterView.as_view(), name='register'),
     path('login/', views.LoginView.as_view(), name='login'),
     path('me/', views.MeView.as_view(), name='me'),
+    path('me/qr/', views.MyQRCodeView.as_view(), name='me-qr'),
     path('change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path(
         'assignments/',

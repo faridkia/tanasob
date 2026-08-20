@@ -159,6 +159,8 @@ class ChangePasswordSerializer(serializers.Serializer):
 class TrainerMemberAssignmentSerializer(serializers.ModelSerializer):
     member_name = serializers.CharField(source='member.user.full_name', read_only=True)
     trainer_name = serializers.CharField(source='trainer.user.full_name', read_only=True)
+    member_user_id = serializers.IntegerField(source='member.user.id', read_only=True)
+    trainer_user_id = serializers.IntegerField(source='trainer.user.id', read_only=True)
 
     class Meta:
         model = TrainerMemberAssignment
@@ -168,10 +170,19 @@ class TrainerMemberAssignmentSerializer(serializers.ModelSerializer):
             'trainer',
             'member_name',
             'trainer_name',
+            'member_user_id',
+            'trainer_user_id',
             'status',
             'assigned_at',
         )
-        read_only_fields = ('id', 'assigned_at', 'member_name', 'trainer_name')
+        read_only_fields = (
+            'id',
+            'assigned_at',
+            'member_name',
+            'trainer_name',
+            'member_user_id',
+            'trainer_user_id',
+        )
 
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
