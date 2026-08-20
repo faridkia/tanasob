@@ -81,7 +81,6 @@ function AuthPage({ register, onLogin }) {
   return (
     <main className="auth-page">
       <section className="auth-intro" style={{ backgroundImage: `url(${gymLoginImage})` }}>
-        <div className="brand-mark"><Activity /></div>
         <div className="auth-tagline"><h1>تناسب</h1><p>باشگاه هوشمند شما</p></div>
       </section>
       <section className="auth-panel">
