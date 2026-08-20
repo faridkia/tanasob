@@ -608,28 +608,38 @@ input:focus, select:focus {
 .hidden { display: none; }
 
 /* ---- Progress ---- */
+.factor-toggle { display: flex; gap: .35rem; }
+.chip {
+  padding: .35rem .75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 600;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.chip:hover { border-color: var(--border-strong); color: var(--ink-soft); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.progress-chart { margin: -.4rem -.2rem .4rem; }
+.progress-list { border-top: 1px solid var(--border); margin-top: .3rem; }
 .progress-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 50px;
-  gap: .7rem;
-  align-items: center;
-  padding: .8rem 0;
+  display: flex; align-items: center; justify-content: space-between; gap: .7rem;
+  padding: .7rem 0;
   border-bottom: 1px solid var(--border);
 }
 .progress-row:last-child { border-bottom: 0; }
 .progress-row strong { font-size: .85rem; }
 .progress-row small { display: block; color: var(--muted); font-size: .72rem; margin-top: .1rem; }
-.progress-bar {
-  height: 6px;
-  border-radius: 99px;
+.progress-values { display: flex; gap: .5rem; flex: none; }
+.progress-values span {
+  font-size: .72rem;
+  color: var(--ink-soft);
   background: var(--bg);
   border: 1px solid var(--border);
-  overflow: hidden;
-}
-.progress-bar i {
-  display: block; height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
+  padding: .2rem .5rem;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 /* ============================================================
