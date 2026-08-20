@@ -310,35 +310,55 @@ function Classes({ user }) {
   return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} /><div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (booking ? <button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
 }
 
+const PLAN_KINDS = {
+  'workout-plans': {
+    label: 'تمرین',
+    icon: Dumbbell,
+    itemUnit: 'حرکت',
+    itemLine: (item) => <><strong>{item.exercise_name}</strong>{item.notes && <small>{item.notes}</small>}</>,
+    itemStat: (item) => `${item.sets}×${item.reps}`,
+  },
+  'diet-plans': {
+    label: 'رژیم',
+    icon: Salad,
+    itemUnit: 'وعده',
+    itemLine: (item) => <><strong>{item.meal_name}</strong>{item.description && <small>{item.description}</small>}</>,
+    itemStat: (item) => `${item.calories} کالری`,
+  },
+}
+
 function Plans({ user }) {
   const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
   const trainer = user.role === 'TRAINER'
   const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), ...(trainer ? [api.get('/auth/assignments/')] : [])]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [user.role])
   const archive = async (type, id) => { try { await api.post(`/${type}/${id}/archive/`); setMessage('برنامه بایگانی شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />{trainer && <PlanCreator assignments={assignments} onCreated={load} onError={setMessage} />}<div className="content-grid"><Card title="برنامه تمرینی">{workouts.map((plan) => <PlanCard key={plan.id} plan={plan} archive={trainer ? archive : null} />) || <Empty text="برنامه تمرینی موجود نیست." />}</Card><DietPlanSection diets={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div></section>
+  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />{trainer && <PlanCreator assignments={assignments} onCreated={load} onError={setMessage} />}<div className="content-grid"><PlanSection title="برنامه تمرینی" kind="workout-plans" plans={workouts} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /><PlanSection title="رژیم غذایی" kind="diet-plans" plans={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div></section>
 }
 
-function DietPlanSection({ diets, canEdit, archive, onChanged, setMessage }) {
+function PlanSection({ title, kind, plans, canEdit, archive, onChanged, setMessage }) {
   const [openId, setOpenId] = useState(null)
-  const openPlan = diets.find((plan) => plan.id === openId) || null
+  const openPlan = plans.find((plan) => plan.id === openId) || null
+  const config = PLAN_KINDS[kind]
   return <>
-    <Card title="رژیم غذایی">{diets.length ? diets.map((plan) => <DietPlanRow key={plan.id} plan={plan} onOpen={() => setOpenId(plan.id)} />) : <Empty text="رژیم غذایی موجود نیست." />}</Card>
-    {openPlan && <DietPlanModal plan={openPlan} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
+    <Card title={title}>{plans.length ? plans.map((plan) => <PlanRow key={plan.id} plan={plan} config={config} onOpen={() => setOpenId(plan.id)} />) : <Empty text={`${title} موجود نیست.`} />}</Card>
+    {openPlan && <PlanModal plan={openPlan} kind={kind} config={config} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
   </>
 }
 
-function DietPlanRow({ plan, onOpen }) {
-  return <button className="diet-row" onClick={onOpen}>
-    <span className="diet-row-thumb">{plan.image ? <img src={plan.image} alt="" /> : <Salad size={18} />}</span>
+function PlanRow({ plan, config, onOpen }) {
+  const Icon = config.icon
+  return <button className="plan-list-row" onClick={onOpen}>
+    <span className="plan-row-thumb">{plan.image ? <img src={plan.image} alt="" /> : <Icon size={18} />}</span>
     <div><strong>{plan.title}</strong><small>{plan.trainer_name || plan.member_name} · تا {formatDate(plan.end_date)}</small></div>
-    <span className="capacity">{plan.items?.length || 0} وعده</span>
+    <span className="capacity">{plan.items?.length || 0} {config.itemUnit}</span>
   </button>
 }
 
-function DietPlanModal({ plan, canEdit, onClose, archive, onChanged, setMessage }) {
+function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, setMessage }) {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
+  const Icon = config.icon
 
   const uploadImage = async (file) => {
     if (!file) return
@@ -346,7 +366,7 @@ function DietPlanModal({ plan, canEdit, onClose, archive, onChanged, setMessage 
     form.append('image', file)
     setUploading(true)
     try {
-      await api.post(`/diet-plans/${plan.id}/image/`, form)
+      await api.post(`/${kind}/${plan.id}/image/`, form)
       onChanged()
     } catch (e) { setMessage(errorMessage(e)) } finally { setUploading(false) }
   }
@@ -354,18 +374,18 @@ function DietPlanModal({ plan, canEdit, onClose, archive, onChanged, setMessage 
   return <div className="modal-overlay" onClick={onClose}>
     <div className="modal-card" onClick={(e) => e.stopPropagation()}>
       <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-      <div className="diet-modal-image">
-        {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="diet-modal-placeholder"><Salad size={30} /><span>عکسی ثبت نشده</span></div>}
-        {uploading && <div className="diet-modal-uploading">در حال آپلود...</div>}
+      <div className="plan-modal-image">
+        {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="plan-modal-placeholder"><Icon size={30} /><span>عکسی ثبت نشده</span></div>}
+        {uploading && <div className="plan-modal-uploading">در حال آپلود...</div>}
       </div>
       {canEdit && <>
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files?.[0])} />
-        <button className="button muted diet-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
+        <button className="button muted plan-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
       </>}
       <h2>{plan.title}</h2>
-      <p className="diet-modal-meta">{plan.trainer_name || plan.member_name} · {formatDate(plan.start_date)} تا {formatDate(plan.end_date)}</p>
-      <div className="diet-modal-items">{plan.items?.map((item) => <div className="diet-modal-item" key={item.id}><div><strong>{item.meal_name}</strong>{item.description && <small>{item.description}</small>}</div><span className="capacity">{item.calories} کالری</span></div>)}</div>
-      {canEdit && !plan.is_archived && <button className="button muted" onClick={() => { archive('diet-plans', plan.id); onClose() }}><Settings size={16} /> بایگانی این رژیم</button>}
+      <p className="plan-modal-meta">{plan.trainer_name || plan.member_name} · {formatDate(plan.start_date)} تا {formatDate(plan.end_date)}</p>
+      <div className="plan-modal-items">{plan.items?.map((item) => <div className="plan-modal-item" key={item.id}><div>{config.itemLine(item)}</div><span className="capacity">{config.itemStat(item)}</span></div>)}</div>
+      {canEdit && !plan.is_archived && <button className="button muted" onClick={() => { archive(kind, plan.id); onClose() }}><Settings size={16} /> بایگانی این {config.label}</button>}
     </div>
   </div>
 }
@@ -436,9 +456,6 @@ function PlanCreator({ assignments, onCreated, onError }) {
   return <Card title="ساخت سریع برنامه"><form className="inline-form" onSubmit={submit}><select value={kind} onChange={(e) => setKind(e.target.value)}><option value="workout-plans">برنامه تمرینی</option><option value="diet-plans">رژیم غذایی</option></select><select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" /><button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button></form></Card>
 }
 
-function PlanCard({ plan, archive }) {
-  return <article className="plan-row"><div><span className="plan-type">تمرین</span><strong>{plan.title}</strong><small>{plan.trainer_name} · تا {formatDate(plan.end_date)}</small><div className="chip-list">{plan.items?.map((item) => <span key={item.id}>{item.exercise_name} · {item.sets}×{item.reps}</span>)}</div></div>{archive && !plan.is_archived && <button className="icon-button" onClick={() => archive('workout-plans', plan.id)} title="بایگانی"><Settings size={17} /></button>}</article>
-}
 
 function PageTitle({ title, text }) { return <div className="page-title"><div><h2>{title}</h2><p>{text}</p></div></div> }
 function Card({ title, children, action, actionButton }) { const navigate = useNavigate(); return <section className="content-card "><header><h3>{title}</h3>{actionButton || (action && <button className="text-button" onClick={() => navigate(action)}>مشاهده همه</button>)}</header>{children}</section> }

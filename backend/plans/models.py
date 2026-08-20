@@ -22,6 +22,9 @@ class WorkoutPlan(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
     is_archived = models.BooleanField(default=False)
+    # Optional reference photo (e.g. a form check or equipment setup),
+    # uploaded separately via WorkoutPlanImageUploadView — mirrors DietPlan.
+    image = models.ImageField(upload_to='workout_plans/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
