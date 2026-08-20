@@ -62,6 +62,15 @@ def purchase_subscription(member, plan):
     return subscription, payment
 
 
+def cancel_subscription(subscription):
+    """Cancel a member's own active subscription (mirrors bookings' cancel flow)."""
+    if subscription.status != Subscription.Status.ACTIVE:
+        raise ValueError('Only an active subscription can be cancelled.')
+    subscription.status = Subscription.Status.CANCELLED
+    subscription.save(update_fields=['status'])
+    return subscription
+
+
 def has_active_subscription(member) -> bool:
     """Return True if ``member`` currently has an ACTIVE subscription (FR-MEM-7)."""
     return Subscription.objects.filter(

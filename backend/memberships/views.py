@@ -21,7 +21,7 @@ from .serializers import (
     SubscribeSerializer,
     SubscriptionSerializer,
 )
-from .services import purchase_subscription
+from .services import cancel_subscription, purchase_subscription
 
 
 class MembershipPlanListCreateView(generics.ListCreateAPIView):
@@ -74,6 +74,23 @@ class SubscribeView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class CancelSubscriptionView(APIView):
+    """Member cancels their own active subscription."""
+
+    permission_classes = [IsMember]
+
+    def post(self, request, pk):
+        try:
+            subscription = Subscription.objects.get(pk=pk, member=request.user.member_profile)
+        except Subscription.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            cancel_subscription(subscription)
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+        return Response(SubscriptionSerializer(subscription).data)
 
 
 class MySubscriptionsView(generics.ListAPIView):
