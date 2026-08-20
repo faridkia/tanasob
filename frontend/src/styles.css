@@ -118,15 +118,6 @@ p { margin: 0; }
 }
 .auth-tagline h1 { color: #fff; font-size: clamp(1.4rem, 2.5vw, 2rem); margin: 0 0 .2rem; }
 .auth-tagline p { color: rgba(255, 255, 255, .7); font-size: .95rem; margin: 0; }
-.brand-mark {
-  width: 48px; height: 48px;
-  display: grid; place-items: center;
-  background: rgba(255, 255, 255, .12);
-  border: 1px solid rgba(255, 255, 255, .22);
-  border-radius: var(--radius);
-  color: #fff;
-  backdrop-filter: blur(4px);
-}
 .auth-intro h1 { color: #fff; font-size: clamp(1.6rem, 3vw, 2.4rem); margin: 1rem 0 .4rem; }
 .auth-intro p { color: rgba(255, 255, 255, .82); max-width: 26rem; font-size: .98rem; }
 
