@@ -530,6 +530,86 @@ input:focus, select:focus {
   border-radius: var(--radius-sm);
 }
 
+/* ---- Diet plan list + modal ---- */
+.diet-row {
+  width: 100%;
+  display: flex; align-items: center; gap: .75rem;
+  padding: .7rem 0;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.diet-row:last-child { border-bottom: 0; }
+.diet-row:hover strong { color: var(--accent-ink); }
+.diet-row > div { min-width: 0; flex: 1; }
+.diet-row strong { display: block; font-size: .9rem; font-weight: 600; transition: color .12s; }
+.diet-row small {
+  display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.diet-row-thumb {
+  width: 42px; height: 42px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  display: grid; place-items: center;
+}
+.diet-row-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(10, 13, 18, .55);
+  display: grid; place-items: center;
+  padding: 1.25rem;
+  z-index: 60;
+}
+.modal-card {
+  position: relative;
+  width: min(100%, 460px);
+  max-height: min(88vh, 720px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgba(16, 24, 40, .3);
+  padding: 1.5rem;
+}
+.modal-close { position: absolute; top: 1rem; left: 1rem; }
+.diet-modal-image {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.diet-modal-image img { width: 100%; height: 100%; object-fit: cover; }
+.diet-modal-placeholder {
+  width: 100%; height: 100%;
+  display: grid; place-items: center; gap: .4rem;
+  color: var(--muted-2);
+  font-size: .8rem;
+}
+.diet-modal-uploading {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  background: rgba(10, 13, 18, .5);
+  color: #fff; font-size: .85rem; font-weight: 600;
+}
+.diet-upload-button { width: 100%; margin-top: .75rem; }
+.modal-card h2 { font-size: 1.25rem; margin: 1.1rem 0 .2rem; }
+.diet-modal-meta { color: var(--muted); font-size: .82rem; margin-bottom: 1rem; }
+.diet-modal-items { display: flex; flex-direction: column; margin-bottom: 1rem; }
+.diet-modal-item {
+  display: flex; align-items: center; justify-content: space-between; gap: .7rem;
+  padding: .65rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.diet-modal-item:last-child { border-bottom: 0; }
+.diet-modal-item strong { display: block; font-size: .88rem; font-weight: 600; }
+.diet-modal-item small { display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem; }
+
 /* ---- Membership QR card ---- */
 .qr-card {
   max-width: 360px;

@@ -63,6 +63,10 @@ class DietPlan(models.Model):
     start_date = models.DateField()
     end_date = models.DateField()
     is_archived = models.BooleanField(default=False)
+    # A reference photo the trainer can attach (e.g. a plated meal or a
+    # hand-written diet chart) — optional, uploaded separately from the
+    # rest of the plan via DietPlanImageUploadView.
+    image = models.ImageField(upload_to='diet_plans/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

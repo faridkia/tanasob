@@ -11,4 +11,5 @@ urlpatterns = [
     path('diet-plans/', views.DietPlanListCreateView.as_view(), name='dietplan-list'),
     path('diet-plans/<int:pk>/', views.DietPlanDetailView.as_view(), name='dietplan-detail'),
     path('diet-plans/<int:pk>/archive/', views.ArchiveDietPlanView.as_view(), name='dietplan-archive'),
+    path('diet-plans/<int:pk>/image/', views.DietPlanImageUploadView.as_view(), name='dietplan-image'),
 ]

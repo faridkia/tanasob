@@ -16,7 +16,7 @@ from common.permissions import IsTrainer
 from accounts.models import TrainerMemberAssignment
 
 from .models import DietPlan, WorkoutPlan
-from .serializers import DietPlanSerializer, WorkoutPlanSerializer
+from .serializers import DietPlanImageSerializer, DietPlanSerializer, WorkoutPlanSerializer
 
 
 def _trainer_member_ids(trainer_user):
@@ -134,3 +134,16 @@ class ArchiveDietPlanView(APIView):
         plan.is_archived = True
         plan.save(update_fields=['is_archived'])
         return Response({'detail': 'Diet plan archived.'})
+
+
+class DietPlanImageUploadView(APIView):
+    """Trainer attaches/replaces a reference photo on their own diet plan."""
+
+    permission_classes = [IsTrainer]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(DietPlan, pk=pk, trainer__user=request.user)
+        serializer = DietPlanImageSerializer(plan, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(DietPlanSerializer(plan, context={'request': request}).data)

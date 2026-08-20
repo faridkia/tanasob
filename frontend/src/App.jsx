@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Bell, Bot, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
-  ClipboardList, CreditCard, Dumbbell, LayoutDashboard, LogOut, MessageCircle,
-  Moon, Plus, QrCode, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Users, X,
+  ClipboardList, CreditCard, Dumbbell, ImagePlus, LayoutDashboard, LogOut, MessageCircle,
+  Moon, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Users, X,
 } from 'lucide-react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
@@ -313,10 +313,62 @@ function Classes({ user }) {
 
 function Plans({ user }) {
   const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
-  const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), ...(user.role === 'TRAINER' ? [api.get('/auth/assignments/')] : [])]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
+  const trainer = user.role === 'TRAINER'
+  const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), ...(trainer ? [api.get('/auth/assignments/')] : [])]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [user.role])
   const archive = async (type, id) => { try { await api.post(`/${type}/${id}/archive/`); setMessage('برنامه بایگانی شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title={user.role === 'TRAINER' ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={user.role === 'TRAINER' ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />{user.role === 'TRAINER' && <PlanCreator assignments={assignments} onCreated={load} onError={setMessage} />}<div className="content-grid"><Card title="برنامه تمرینی">{workouts.map((plan) => <PlanCard key={plan.id} plan={plan} type="workout-plans" archive={user.role === 'TRAINER' ? archive : null} />) || <Empty text="برنامه تمرینی موجود نیست." />}</Card><Card title="رژیم غذایی">{diets.map((plan) => <PlanCard key={plan.id} plan={plan} type="diet-plans" archive={user.role === 'TRAINER' ? archive : null} diet />) || <Empty text="رژیم غذایی موجود نیست." />}</Card></div></section>
+  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />{trainer && <PlanCreator assignments={assignments} onCreated={load} onError={setMessage} />}<div className="content-grid"><Card title="برنامه تمرینی">{workouts.map((plan) => <PlanCard key={plan.id} plan={plan} archive={trainer ? archive : null} />) || <Empty text="برنامه تمرینی موجود نیست." />}</Card><DietPlanSection diets={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div></section>
+}
+
+function DietPlanSection({ diets, canEdit, archive, onChanged, setMessage }) {
+  const [openId, setOpenId] = useState(null)
+  const openPlan = diets.find((plan) => plan.id === openId) || null
+  return <>
+    <Card title="رژیم غذایی">{diets.length ? diets.map((plan) => <DietPlanRow key={plan.id} plan={plan} onOpen={() => setOpenId(plan.id)} />) : <Empty text="رژیم غذایی موجود نیست." />}</Card>
+    {openPlan && <DietPlanModal plan={openPlan} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
+  </>
+}
+
+function DietPlanRow({ plan, onOpen }) {
+  return <button className="diet-row" onClick={onOpen}>
+    <span className="diet-row-thumb">{plan.image ? <img src={plan.image} alt="" /> : <Salad size={18} />}</span>
+    <div><strong>{plan.title}</strong><small>{plan.trainer_name || plan.member_name} · تا {formatDate(plan.end_date)}</small></div>
+    <span className="capacity">{plan.items?.length || 0} وعده</span>
+  </button>
+}
+
+function DietPlanModal({ plan, canEdit, onClose, archive, onChanged, setMessage }) {
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef(null)
+
+  const uploadImage = async (file) => {
+    if (!file) return
+    const form = new FormData()
+    form.append('image', file)
+    setUploading(true)
+    try {
+      await api.post(`/diet-plans/${plan.id}/image/`, form)
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setUploading(false) }
+  }
+
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <div className="diet-modal-image">
+        {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="diet-modal-placeholder"><Salad size={30} /><span>عکسی ثبت نشده</span></div>}
+        {uploading && <div className="diet-modal-uploading">در حال آپلود...</div>}
+      </div>
+      {canEdit && <>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files?.[0])} />
+        <button className="button muted diet-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
+      </>}
+      <h2>{plan.title}</h2>
+      <p className="diet-modal-meta">{plan.trainer_name || plan.member_name} · {formatDate(plan.start_date)} تا {formatDate(plan.end_date)}</p>
+      <div className="diet-modal-items">{plan.items?.map((item) => <div className="diet-modal-item" key={item.id}><div><strong>{item.meal_name}</strong>{item.description && <small>{item.description}</small>}</div><span className="capacity">{item.calories} کالری</span></div>)}</div>
+      {canEdit && !plan.is_archived && <button className="button muted" onClick={() => { archive('diet-plans', plan.id); onClose() }}><Settings size={16} /> بایگانی این رژیم</button>}
+    </div>
+  </div>
 }
 
 const PROGRESS_FACTORS = [
@@ -385,8 +437,8 @@ function PlanCreator({ assignments, onCreated, onError }) {
   return <Card title="ساخت سریع برنامه"><form className="inline-form" onSubmit={submit}><select value={kind} onChange={(e) => setKind(e.target.value)}><option value="workout-plans">برنامه تمرینی</option><option value="diet-plans">رژیم غذایی</option></select><select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" /><button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button></form></Card>
 }
 
-function PlanCard({ plan, type, archive, diet }) {
-  return <article className="plan-row"><div><span className="plan-type">{diet ? 'رژیم' : 'تمرین'}</span><strong>{plan.title}</strong><small>{plan.trainer_name} · تا {formatDate(plan.end_date)}</small><div className="chip-list">{plan.items?.map((item) => <span key={item.id}>{diet ? `${item.meal_name} · ${item.calories} کالری` : `${item.exercise_name} · ${item.sets}×${item.reps}`}</span>)}</div></div>{archive && !plan.is_archived && <button className="icon-button" onClick={() => archive(type, plan.id)} title="بایگانی"><Settings size={17} /></button>}</article>
+function PlanCard({ plan, archive }) {
+  return <article className="plan-row"><div><span className="plan-type">تمرین</span><strong>{plan.title}</strong><small>{plan.trainer_name} · تا {formatDate(plan.end_date)}</small><div className="chip-list">{plan.items?.map((item) => <span key={item.id}>{item.exercise_name} · {item.sets}×{item.reps}</span>)}</div></div>{archive && !plan.is_archived && <button className="icon-button" onClick={() => archive('workout-plans', plan.id)} title="بایگانی"><Settings size={17} /></button>}</article>
 }
 
 function PageTitle({ title, text }) { return <div className="page-title"><div><h2>{title}</h2><p>{text}</p></div></div> }
