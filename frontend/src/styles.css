@@ -3,7 +3,44 @@
    Solid surfaces, defined borders, one accent, calm spacing.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+/* Dana — self-hosted, five real weights (no synthesized bold/italic, which
+   muddies Persian letterforms). There is no 600 face: CSS weight matching
+   resolves 600 upward to 700, so rules asking for semibold use 500. */
+@font-face {
+  font-family: 'Dana';
+  src: url('./assets/fonts/dana-extralight.woff2') format('woff2');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dana';
+  src: url('./assets/fonts/dana-light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dana';
+  src: url('./assets/fonts/dana-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dana';
+  src: url('./assets/fonts/dana-medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dana';
+  src: url('./assets/fonts/dana-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* ---- Design tokens ---- */
 :root {
@@ -33,7 +70,8 @@
   --radius-lg: 18px;
   --shadow-xs: 0 1px 2px rgba(16, 24, 40, .04);
   --shadow-sm: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
-  --font: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+  --font: 'Dana', Tahoma, Arial, sans-serif;
+  font-synthesis: none;
 }
 
 :root[data-theme='dark'] {
@@ -168,15 +206,6 @@ p { margin: 0; }
   color: #fff;
   border-radius: var(--radius-sm);
 }
-.user-mini {
-  display: flex; align-items: center; gap: .65rem;
-  padding: .6rem;
-  border: 1px solid rgba(255, 255, 255, .07);
-  border-radius: var(--radius);
-  margin-bottom: 1.3rem;
-}
-.user-mini strong { display: block; color: #fff; font-size: .88rem; }
-.user-mini small { display: block; font-size: .72rem; color: var(--muted-2); margin-top: .1rem; }
 .avatar {
   background: var(--accent);
   color: #fff;
@@ -187,17 +216,17 @@ p { margin: 0; }
   font-weight: 700;
   font-size: .85rem;
 }
-.sidebar nav { display: grid; gap: .1rem; }
+.sidebar nav { display: grid; gap: .25rem; }
 .sidebar nav a, .sidebar-bottom {
-  display: flex; align-items: center; gap: .65rem;
-  padding: .6rem .65rem;
+  display: flex; align-items: center; gap: .7rem;
+  padding: .8rem .75rem;
   border-radius: var(--radius-sm);
   color: var(--sidebar-ink);
-  font-size: .88rem;
+  font-size: 1rem;
   font-weight: 500;
   transition: background .12s, color .12s;
 }
-.sidebar nav a svg { width: 18px; height: 18px; opacity: .85; }
+.sidebar nav a svg { width: 20px; height: 20px; opacity: .85; }
 .sidebar nav a:hover { background: rgba(255, 255, 255, .05); color: #fff; }
 .sidebar nav a.active { background: var(--sidebar-accent); color: #fff; }
 .sidebar nav a.active svg { opacity: 1; }
