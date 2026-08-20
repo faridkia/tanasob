@@ -1,0 +1,17 @@
+# db.sqlite3 is intentionally NOT excluded — it ships inside the image with
+# the current seed data so the demo works immediately on a fresh server.
+
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+staticfiles/
+media/
+.git/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
