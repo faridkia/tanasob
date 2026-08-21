@@ -18,11 +18,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from common.permissions import IsAdmin
 
-from .models import TrainerMemberAssignment, User
+from .models import Trainer, TrainerMemberAssignment, User
 from .serializers import (
     ChangePasswordSerializer,
     LoginSerializer,
     RegisterSerializer,
+    TrainerListSerializer,
     TrainerMemberAssignmentSerializer,
     UpdateProfileSerializer,
     UserSerializer,
@@ -117,6 +118,14 @@ class ChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save()
         return Response({'detail': 'Password updated successfully.'})
+
+
+class TrainerListView(generics.ListAPIView):
+    """Minimal trainer roster — admin picker when scheduling a class session."""
+
+    queryset = Trainer.objects.select_related('user').order_by('user__full_name')
+    serializer_class = TrainerListSerializer
+    permission_classes = [IsAdmin]
 
 
 class TrainerMemberAssignmentView(generics.ListCreateAPIView):
