@@ -15,6 +15,7 @@ from common.permissions import IsAdmin
 from bookings.models import Attendance, Booking
 from classes.models import ClassSession, GymClass
 from memberships.models import Payment, Subscription
+from memberships.services import expire_due_subscriptions
 
 
 class SubscriptionReportView(APIView):
@@ -23,6 +24,7 @@ class SubscriptionReportView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
+        expire_due_subscriptions()
         total = Subscription.objects.count()
         active = Subscription.objects.filter(status=Subscription.Status.ACTIVE).count()
         expired = Subscription.objects.filter(status=Subscription.Status.EXPIRED).count()

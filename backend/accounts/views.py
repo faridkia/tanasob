@@ -18,10 +18,12 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from common.permissions import IsAdmin
 
-from .models import Trainer, TrainerMemberAssignment, User
+from .models import Member, Trainer, TrainerMemberAssignment, User
 from .serializers import (
+    AdminUserUpdateSerializer,
     ChangePasswordSerializer,
     LoginSerializer,
+    MemberListSerializer,
     RegisterSerializer,
     TrainerListSerializer,
     TrainerMemberAssignmentSerializer,
@@ -120,11 +122,56 @@ class ChangePasswordView(APIView):
         return Response({'detail': 'Password updated successfully.'})
 
 
+class AdminUserListCreateView(generics.ListCreateAPIView):
+    """Admin manages Trainer/Member accounts (FR-AUTH-5, US-A3).
+
+    GET: list all trainers/members (optionally ?role=TRAINER|MEMBER).
+    POST: create a new trainer/member account (reuses RegisterSerializer —
+    same account-creation logic as self-registration, just admin-triggered).
+    """
+
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        qs = User.objects.filter(role__in=[User.Role.MEMBER, User.Role.TRAINER]).order_by('full_name')
+        role = self.request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+        return qs
+
+    def get_serializer_class(self):
+        return RegisterSerializer if self.request.method == 'POST' else UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class AdminUserDetailView(generics.RetrieveUpdateAPIView):
+    """Admin edits or activates/deactivates a single Trainer/Member account."""
+
+    queryset = User.objects.filter(role__in=[User.Role.MEMBER, User.Role.TRAINER])
+    permission_classes = [IsAdmin]
+
+    def get_serializer_class(self):
+        return AdminUserUpdateSerializer if self.request.method in ('PUT', 'PATCH') else UserSerializer
+
+
 class TrainerListView(generics.ListAPIView):
     """Minimal trainer roster — admin picker when scheduling a class session."""
 
     queryset = Trainer.objects.select_related('user').order_by('user__full_name')
     serializer_class = TrainerListSerializer
+    permission_classes = [IsAdmin]
+
+
+class MemberListView(generics.ListAPIView):
+    """Minimal member roster — admin picker when assigning a trainer."""
+
+    queryset = Member.objects.select_related('user').order_by('user__full_name')
+    serializer_class = MemberListSerializer
     permission_classes = [IsAdmin]
 
 
