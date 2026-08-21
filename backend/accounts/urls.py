@@ -11,6 +11,9 @@ urlpatterns = [
     path('me/qr/', views.MyQRCodeView.as_view(), name='me-qr'),
     path('change-password/', views.ChangePasswordView.as_view(), name='change-password'),
     path('trainers/', views.TrainerListView.as_view(), name='trainers-list'),
+    path('members/', views.MemberListView.as_view(), name='members-list'),
+    path('users/', views.AdminUserListCreateView.as_view(), name='admin-users-list'),
+    path('users/<int:pk>/', views.AdminUserDetailView.as_view(), name='admin-user-detail'),
     path(
         'assignments/',
         views.TrainerMemberAssignmentView.as_view(),

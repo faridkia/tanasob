@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, ArrowLeft, Bell, Bot, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
-  ClipboardList, CreditCard, Dumbbell, HeartPulse, ImagePlus, LayoutDashboard, LogOut, MessageCircle,
-  Moon, Play, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Trophy, UserCheck, Users, X,
+  ClipboardList, CreditCard, Dumbbell, HeartPulse, ImagePlus, Link2, LayoutDashboard, LogOut, MessageCircle,
+  Moon, Play, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Trash2, Trophy,
+  UserCheck, UserPlus, UserX, Users, X,
 } from 'lucide-react'
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
@@ -365,7 +366,8 @@ function Classes({ user }) {
   useEffect(() => { load() }, [user.role])
   const book = async (id) => { try { await api.post('/bookings/', { session: id }); setMessage('رزرو با موفقیت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
   const cancel = async (id) => { try { await api.post(`/bookings/${id}/cancel/`); setMessage('رزرو لغو شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
+  const selfCheckIn = async (sessionId) => { try { await api.post('/attendance/check-in/', { session: sessionId }); setMessage('حضورت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
+  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <><button className="button primary" onClick={() => selfCheckIn(session.id)}>ثبت حضور</button><button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button></> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
 }
 
 const PLAN_KINDS = {
@@ -473,7 +475,7 @@ function Progress() {
 function Messages({ user }) {
   const [assignments, setAssignments] = useState([]); const [partner, setPartner] = useState(''); const [messages, setMessages] = useState([]); const [content, setContent] = useState(''); const [message, setMessage] = useState('')
   useEffect(() => { api.get('/auth/assignments/').then(({ data }) => { const items = getItems(data); setAssignments(items); if (items[0]) setPartner(String(user.role === 'MEMBER' ? items[0].trainer_user_id : items[0].member_user_id)) }).catch((e) => setMessage(errorMessage(e))) }, [user.role])
-  useEffect(() => { if (partner) api.get(`/messages/?with=${partner}`).then(({ data }) => setMessages(getItems(data))).catch((e) => setMessage(errorMessage(e))) }, [partner])
+  useEffect(() => { if (partner) { api.get(`/messages/?with=${partner}`).then(({ data }) => setMessages(getItems(data))).catch((e) => setMessage(errorMessage(e))); api.post('/messages/mark-read/', { with: partner }).catch(() => {}) } }, [partner])
   const send = async (event) => { event.preventDefault(); if (!content) return; try { await api.post('/messages/send/', { receiver: partner, content }); setContent(''); const { data } = await api.get(`/messages/?with=${partner}`); setMessages(getItems(data)) } catch (e) { setMessage(errorMessage(e)) } }
   const label = (item) => user.role === 'MEMBER' ? item.trainer_name : item.member_name
   const partnerId = (item) => String(user.role === 'MEMBER' ? item.trainer_user_id : item.member_user_id)
@@ -500,8 +502,85 @@ function TrainerPanel() {
 
 function AdminPanel() {
   const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [message, setMessage] = useState('')
-  useEffect(() => { Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e))) }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div></section>
+  const [users, setUsers] = useState([]); const [members, setMembers] = useState([]); const [trainers, setTrainers] = useState([])
+  const loadUsers = () => Promise.all([api.get('/auth/users/'), api.get('/auth/members/'), api.get('/auth/trainers/')]).then(([a, b, c]) => { setUsers(getItems(a.data)); setMembers(getItems(b.data)); setTrainers(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => {
+    Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e)))
+    loadUsers()
+  }, [])
+  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
+}
+
+function UserManager({ users, members, trainers, onChanged, setMessage }) {
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', password: '', password2: '', role: 'MEMBER' })
+  const [busy, setBusy] = useState(false)
+  const createUser = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await api.post('/auth/users/', form)
+      setForm({ full_name: '', email: '', phone: '', password: '', password2: '', role: 'MEMBER' })
+      setMessage('حساب جدید ساخته شد.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+  const toggleActive = async (userItem) => {
+    try {
+      await api.patch(`/auth/users/${userItem.id}/`, { is_active: !userItem.is_active })
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  const [assignForm, setAssignForm] = useState({ member: '', trainer: '' })
+  const [assignBusy, setAssignBusy] = useState(false)
+  const createAssignment = async (event) => {
+    event.preventDefault()
+    if (!assignForm.member || !assignForm.trainer) return
+    setAssignBusy(true)
+    try {
+      await api.post('/auth/assignments/', assignForm)
+      setAssignForm({ member: '', trainer: '' })
+      setMessage('مربی به عضو اختصاص یافت.')
+    } catch (e) { setMessage(errorMessage(e)) } finally { setAssignBusy(false) }
+  }
+
+  return <div className="content-grid">
+    <Card title="ساخت حساب مربی یا عضو">
+      <form onSubmit={createUser} className="form-grid compact">
+        <Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
+        <Field label="ایمیل" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
+        <Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
+        <label>نوع حساب<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+          <option value="MEMBER">عضو باشگاه</option>
+          <option value="TRAINER">مربی</option>
+        </select></label>
+        <Field label="رمز عبور" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
+        <Field label="تکرار رمز عبور" type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
+        <button className="button primary" disabled={busy}><UserPlus size={17} /> ساخت حساب</button>
+      </form>
+    </Card>
+    <Card title="اختصاص مربی به عضو">
+      <form onSubmit={createAssignment} className="form-grid compact">
+        <label>عضو<select value={assignForm.member} onChange={(e) => setAssignForm({ ...assignForm, member: e.target.value })} required>
+          <option value="">انتخاب عضو</option>
+          {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+        </select></label>
+        <label>مربی<select value={assignForm.trainer} onChange={(e) => setAssignForm({ ...assignForm, trainer: e.target.value })} required>
+          <option value="">انتخاب مربی</option>
+          {trainers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+        </select></label>
+        <button className="button primary" disabled={assignBusy}><Link2 size={16} /> اختصاص مربی</button>
+      </form>
+    </Card>
+    <Card title="کاربران باشگاه">
+      {users.length ? users.map((u) => <div className="list-row" key={u.id}>
+        <span className="avatar">{u.full_name?.[0]}</span>
+        <div><strong>{u.full_name}</strong><small>{u.email} · {roleLabel[u.role]}</small></div>
+        <span className={u.is_active ? 'status active' : 'status expired'}>{u.is_active ? 'فعال' : 'غیرفعال'}</span>
+        <button className="icon-button" onClick={() => toggleActive(u)} title={u.is_active ? 'غیرفعال‌سازی' : 'فعال‌سازی'}>{u.is_active ? <UserX size={16} /> : <UserCheck size={16} />}</button>
+      </div>) : <Empty text="کاربری ثبت نشده است." />}
+    </Card>
+  </div>
 }
 
 function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
@@ -533,6 +612,14 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
     } catch (e) { setMessage(errorMessage(e)) } finally { setSessionBusy(false) }
   }
 
+  const deleteClass = async (id) => {
+    try {
+      await api.delete(`/classes/${id}/`)
+      setMessage('کلاس حذف شد.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
   return <div className="content-grid">
       <Card title="ساخت کلاس جدید">
         <form onSubmit={createClass} className="form-grid compact">
@@ -558,6 +645,9 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
           <Field label="ظرفیت" type="number" value={sessionForm.capacity} onChange={(capacity) => setSessionForm({ ...sessionForm, capacity })} required />
           <button className="button primary" disabled={sessionBusy}>ساخت جلسه <Plus size={17} /></button>
         </form>
+      </Card>
+      <Card title="کلاس‌های موجود">
+        {classes.length ? classes.map((c) => <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><button className="icon-button" onClick={() => deleteClass(c.id)} title="حذف کلاس"><Trash2 size={16} /></button></div>) : <Empty text="هنوز کلاسی ثبت نشده است." />}
       </Card>
     </div>
 }

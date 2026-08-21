@@ -35,6 +35,16 @@ class TrainerListSerializer(serializers.ModelSerializer):
         fields = ('id', 'full_name', 'specialization')
 
 
+class MemberListSerializer(serializers.ModelSerializer):
+    """Minimal member roster for admin pickers (e.g. assigning a trainer)."""
+
+    full_name = serializers.CharField(source='user.full_name', read_only=True)
+
+    class Meta:
+        model = Member
+        fields = ('id', 'full_name')
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Read serializer for a user, including the role-specific profile."""
 
@@ -164,6 +174,14 @@ class ChangePasswordSerializer(serializers.Serializer):
         if not user.check_password(value):
             raise serializers.ValidationError('Current password is incorrect.')
         return value
+
+
+class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    """Admin-only edit: name/phone and activate/deactivate (FR-AUTH-5)."""
+
+    class Meta:
+        model = User
+        fields = ('full_name', 'phone', 'is_active')
 
 
 class TrainerMemberAssignmentSerializer(serializers.ModelSerializer):

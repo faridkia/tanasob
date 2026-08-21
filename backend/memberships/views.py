@@ -21,7 +21,7 @@ from .serializers import (
     SubscribeSerializer,
     SubscriptionSerializer,
 )
-from .services import cancel_subscription, purchase_subscription
+from .services import cancel_subscription, expire_due_subscriptions, purchase_subscription
 
 
 class MembershipPlanListCreateView(generics.ListCreateAPIView):
@@ -100,6 +100,7 @@ class MySubscriptionsView(generics.ListAPIView):
     permission_classes = [IsMember]
 
     def get_queryset(self):
+        expire_due_subscriptions()
         return Subscription.objects.filter(member=self.request.user.member_profile)
 
 
@@ -120,9 +121,12 @@ class AdminSubscriptionListView(generics.ListAPIView):
 
     serializer_class = SubscriptionSerializer
     permission_classes = [IsAdmin]
-    queryset = Subscription.objects.select_related('member__user', 'plan')
     filterset_fields = ['status', 'plan']
     search_fields = ['member__user__email', 'member__user__full_name']
+
+    def get_queryset(self):
+        expire_due_subscriptions()
+        return Subscription.objects.select_related('member__user', 'plan')
 
 
 class AdminPaymentListView(generics.ListAPIView):
