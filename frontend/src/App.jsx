@@ -344,12 +344,28 @@ function QRCheckIn({ sessions, sessionId, setSessionId, onScan }) {
 }
 
 function Classes({ user }) {
-  const [sessions, setSessions] = useState([]); const [bookings, setBookings] = useState([]); const [attendance, setAttendance] = useState([]); const [message, setMessage] = useState('')
-  const load = () => Promise.all([api.get('/sessions/'), ...(user.role === 'MEMBER' ? [api.get('/bookings/'), api.get('/attendance/')] : [])]).then(([a, b, c]) => { setSessions(getItems(a.data)); setBookings(b ? getItems(b.data) : []); setAttendance(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
+  const admin = user.role === 'ADMIN'
+  const [sessions, setSessions] = useState([]); const [bookings, setBookings] = useState([]); const [attendance, setAttendance] = useState([]); const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [message, setMessage] = useState('')
+  const load = () => {
+    const calls = [api.get('/sessions/')]
+    if (user.role === 'MEMBER') calls.push(api.get('/bookings/'), api.get('/attendance/'))
+    if (admin) calls.push(api.get('/classes/'), api.get('/auth/trainers/'))
+    return Promise.all(calls).then((results) => {
+      setSessions(getItems(results[0].data))
+      if (user.role === 'MEMBER') {
+        setBookings(getItems(results[1].data))
+        setAttendance(getItems(results[2].data))
+      }
+      if (admin) {
+        setClasses(getItems(results[1].data))
+        setTrainers(getItems(results[2].data))
+      }
+    }).catch((e) => setMessage(errorMessage(e)))
+  }
   useEffect(() => { load() }, [user.role])
   const book = async (id) => { try { await api.post('/bookings/', { session: id }); setMessage('رزرو با موفقیت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
   const cancel = async (id) => { try { await api.post(`/bookings/${id}/cancel/`); setMessage('رزرو لغو شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} /><div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
+  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
 }
 
 const PLAN_KINDS = {
@@ -484,16 +500,11 @@ function TrainerPanel() {
 
 function AdminPanel() {
   const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [message, setMessage] = useState('')
-  const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [sessions, setSessions] = useState([])
-  const loadCatalog = () => Promise.all([api.get('/classes/'), api.get('/auth/trainers/'), api.get('/sessions/')]).then(([a, b, c]) => { setClasses(getItems(a.data)); setTrainers(getItems(b.data)); setSessions(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
-  useEffect(() => {
-    Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e)))
-    loadCatalog()
-  }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><ClassSessionManager classes={classes} trainers={trainers} sessions={sessions} onChanged={loadCatalog} setMessage={setMessage} /></section>
+  useEffect(() => { Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e))) }, [])
+  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div></section>
 }
 
-function ClassSessionManager({ classes, trainers, sessions, onChanged, setMessage }) {
+function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
   const [classForm, setClassForm] = useState({ name: '', category: '', description: '' })
   const [classBusy, setClassBusy] = useState(false)
   const createClass = async (event) => {
@@ -522,8 +533,7 @@ function ClassSessionManager({ classes, trainers, sessions, onChanged, setMessag
     } catch (e) { setMessage(errorMessage(e)) } finally { setSessionBusy(false) }
   }
 
-  return <>
-    <div className="content-grid">
+  return <div className="content-grid">
       <Card title="ساخت کلاس جدید">
         <form onSubmit={createClass} className="form-grid compact">
           <Field label="نام کلاس" value={classForm.name} onChange={(name) => setClassForm({ ...classForm, name })} required />
@@ -550,10 +560,6 @@ function ClassSessionManager({ classes, trainers, sessions, onChanged, setMessag
         </form>
       </Card>
     </div>
-    <Card title="کلاس‌های موجود">
-      {classes.length ? classes.map((c) => <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><span className="capacity">{sessions.filter((s) => s.gym_class === c.id).length} جلسه</span></div>) : <Empty text="هنوز کلاسی ثبت نشده است." />}
-    </Card>
-  </>
 }
 
 function Profile({ user, setUser }) {
