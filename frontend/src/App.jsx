@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, Bell, Bot, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
-  ClipboardList, CreditCard, Dumbbell, ImagePlus, LayoutDashboard, LogOut, MessageCircle,
-  Moon, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Users, X,
+  Activity, ArrowLeft, Bell, Bot, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
+  ClipboardList, CreditCard, Dumbbell, HeartPulse, ImagePlus, LayoutDashboard, LogOut, MessageCircle,
+  Moon, Play, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Trophy, UserCheck, Users, X,
 } from 'lucide-react'
-import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
@@ -58,11 +58,50 @@ function App() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <AuthPage onLogin={login} />} />
       <Route path="/register" element={user ? <Navigate to="/" /> : <AuthPage register onLogin={login} />} />
+      {!user && <Route path="/" element={<Landing />} />}
       <Route path="*" element={user ? (
         <Shell user={user} setUser={setUser} logout={logout} theme={theme} setTheme={setTheme} />
       ) : <Navigate to="/login" />} />
     </Routes>
   )
+}
+
+const LANDING_NAV = ['خانه', 'درباره ما', 'خدمات', 'برنامه‌ها', 'تماس با ما']
+
+const LANDING_FEATURES = [
+  { icon: Trophy, title: 'نتایج واقعی', text: 'برنامه‌های علمی و اصولی برای رسیدن به بهترین نتیجه' },
+  { icon: UserCheck, title: 'مربیان حرفه‌ای', text: 'مربیان باتجربه و دارای معتبرترین مدارک بین‌المللی' },
+  { icon: ClipboardList, title: 'برنامه شخصی‌سازی شده', text: 'برنامه تمرینی و غذایی متناسب با هدف و شرایط بدنی تو' },
+  { icon: HeartPulse, title: 'تجهیزات به‌روز', text: 'مدرن‌ترین دستگاه‌ها و محیطی استاندارد و تمیز' },
+]
+
+function Landing() {
+  return <div className="landing">
+    <header className="landing-nav">
+      <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> ورود / ثبت‌نام</Link>
+      <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{label}</a>)}</nav>
+      <div className="landing-logo"><strong>تناسب</strong><span><Activity size={18} /></span></div>
+    </header>
+
+    <section className="landing-hero">
+      <div className="landing-hero-text">
+        <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
+        <h1>بهترین نسخه<br />از <span>خودت باش</span></h1>
+        <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
+        <div className="landing-cta-row">
+          <Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link>
+          <button className="landing-btn landing-btn-ghost"><Play size={15} /> تماشای معرفی باشگاه</button>
+        </div>
+      </div>
+      <div className="landing-hero-image" style={{ backgroundImage: `url(${gymLoginImage})` }} />
+    </section>
+
+    <section className="landing-features">
+      <p className="landing-eyebrow center">چرا تناسب؟</p>
+      <h2>همه چیز برای رسیدن به هدف تو</h2>
+      <div className="landing-features-grid">{LANDING_FEATURES.map(({ icon: Icon, title, text }) => <div className="landing-feature" key={title}><span><Icon size={22} /></span><strong>{title}</strong><p>{text}</p></div>)}</div>
+    </section>
+  </div>
 }
 
 function AuthPage({ register, onLogin }) {
