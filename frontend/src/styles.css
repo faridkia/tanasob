@@ -383,6 +383,28 @@ p { margin: 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .member-checkin-top small { display: block; color: var(--muted); font-size: .76rem; margin-top: .15rem; }
+.member-checkin-done {
+  display: flex; align-items: center; gap: .4rem;
+  color: var(--success);
+  background: var(--success-soft);
+  font-size: .8rem;
+  font-weight: 600;
+  padding: .5rem .7rem;
+  border-radius: var(--radius-sm);
+  margin: 0;
+}
+.attended-badge {
+  display: inline-flex; align-items: center; gap: .35rem;
+  color: var(--success);
+  background: var(--success-soft);
+  font-size: .8rem;
+  font-weight: 600;
+  padding: .5rem .8rem;
+  border-radius: 999px;
+  width: 100%;
+  justify-content: center;
+  margin-top: .6rem;
+}
 
 .date-chip {
   font-size: .72rem;
