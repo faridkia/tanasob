@@ -187,15 +187,20 @@ class Command(BaseCommand):
             (members[7], plans[0], today - timedelta(days=4), today + timedelta(days=26), Subscription.Status.CANCELLED),
         ]
         for index, (member, plan, start_date, end_date, status) in enumerate(subscription_data, start=1):
+            # Lookup is (member, plan) only — start_date/end_date are computed
+            # relative to "today" and drift on every real-world day this
+            # command re-runs, so including them in the lookup key caused
+            # get_or_create to miss the existing row and insert a duplicate
+            # ACTIVE subscription instead of updating it.
             subscription, _ = Subscription.objects.get_or_create(
                 member=member,
                 plan=plan,
-                start_date=start_date,
-                defaults={'end_date': end_date, 'status': status},
+                defaults={'start_date': start_date, 'end_date': end_date, 'status': status},
             )
+            subscription.start_date = start_date
             subscription.end_date = end_date
             subscription.status = status
-            subscription.save(update_fields=['end_date', 'status'])
+            subscription.save(update_fields=['start_date', 'end_date', 'status'])
             payment_status = (
                 Payment.Status.SUCCESS
                 if status != Subscription.Status.CANCELLED
