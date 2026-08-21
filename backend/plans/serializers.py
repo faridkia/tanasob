@@ -4,6 +4,13 @@ from rest_framework import serializers
 
 from .models import DietPlan, DietPlanItem, WorkoutPlan, WorkoutPlanItem
 
+MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5MB — plenty for a phone photo, caps abuse
+
+
+def validate_image_size(value):
+    if value.size > MAX_IMAGE_SIZE_BYTES:
+        raise serializers.ValidationError('حجم عکس نباید بیشتر از ۵ مگابایت باشد.')
+
 
 # ---- Workout Plan ----
 
@@ -51,7 +58,7 @@ class WorkoutPlanImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkoutPlan
         fields = ('image',)
-        extra_kwargs = {'image': {'required': True}}
+        extra_kwargs = {'image': {'required': True, 'validators': [validate_image_size]}}
 
 
 # ---- Diet Plan ----
@@ -100,4 +107,4 @@ class DietPlanImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = DietPlan
         fields = ('image',)
-        extra_kwargs = {'image': {'required': True}}
+        extra_kwargs = {'image': {'required': True, 'validators': [validate_image_size]}}

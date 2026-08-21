@@ -6,8 +6,12 @@ services:
     environment:
       # Production mode: no debug tracebacks leaking to a public server.
       DJANGO_DEBUG: "False"
-      # Tighten this to the server's real domain/IP once known.
-      ALLOWED_HOSTS: "*"
+      ALLOWED_HOSTS: "tanasob.flora-app.ir,localhost,127.0.0.1"
+      CSRF_TRUSTED_ORIGINS: "https://tanasob.flora-app.ir,http://tanasob.flora-app.ir"
+      # Flip to "True" once `certbot --nginx -d tanasob.flora-app.ir` has run
+      # and HTTPS is actually live — see tanasob/settings.py for why this
+      # isn't on by default.
+      HTTPS_ENABLED: "False"
     ports:
       - "30081:8000"   # 8000-8013 are taken on the target server
     volumes:

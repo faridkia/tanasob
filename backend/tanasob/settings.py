@@ -20,16 +20,46 @@ load_dotenv(BASE_DIR / '.env')
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+_INSECURE_DEFAULT_KEY = 'django-insecure-$zp(9o_dvm8@w&ggsd&y$7(id=i2xnc(*-s5m((%p+p#$0dtcd'
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-$zp(9o_dvm8@w&ggsd&y$7(id=i2xnc(*-s5m((%p+p#$0dtcd',
-)
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', _INSECURE_DEFAULT_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
+# This fallback key is public (it's committed to the repo) — fine for local
+# dev, but running with DEBUG=False on it would mean anyone can forge
+# session/JWT-adjacent signed data. Fail loudly instead of deploying silently
+# insecure.
+if not DEBUG and SECRET_KEY == _INSECURE_DEFAULT_KEY:
+    raise RuntimeError(
+        'Refusing to start with DEBUG=False and the default DJANGO_SECRET_KEY. '
+        'Set a real, secret DJANGO_SECRET_KEY in the environment (backend/.env).'
+    )
+
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+# -------------------------------------------------------------------
+# Production-only hardening (skipped in local dev, where there's no TLS).
+# nginx terminates TLS and proxies plain HTTP internally, so Django needs
+# SECURE_PROXY_SSL_HEADER to know the original request was HTTPS.
+#
+# HTTPS_ENABLED defaults to False so a fresh deploy (before `certbot --nginx`
+# has run) isn't locked out by cookies the browser won't send back over
+# plain HTTP, or redirected to an HTTPS port that doesn't exist yet. Flip it
+# to True in the server's env once HTTPS is actually live.
+# -------------------------------------------------------------------
+if not DEBUG:
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    HTTPS_ENABLED = os.environ.get('HTTPS_ENABLED', 'False').lower() in ('true', '1', 'yes')
+    if HTTPS_ENABLED:
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+        SECURE_SSL_REDIRECT = True
+        SESSION_COOKIE_SECURE = True
+        CSRF_COOKIE_SECURE = True
+        SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30  # 30 days
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 
 # Application definition
