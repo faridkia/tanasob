@@ -78,24 +78,26 @@ const LANDING_FEATURES = [
 
 function Landing() {
   return <div className="landing">
-    <header className="landing-nav">
-      <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> ورود / ثبت‌نام</Link>
-      <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{label}</a>)}</nav>
-      <div className="landing-logo"><strong>تناسب</strong><span><Activity size={18} /></span></div>
-    </header>
-
-    <section className="landing-hero">
-      <div className="landing-hero-text">
-        <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
-        <h1>بهترین نسخه<br /><span>خودت باش</span></h1>
-        <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
-        <div className="landing-cta-row">
-          <Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link>
-          <button className="landing-btn landing-btn-ghost"><Play size={15} /> تماشای معرفی باشگاه</button>
-        </div>
-      </div>
+    <div className="landing-top">
       <div className="landing-hero-image" style={{ backgroundImage: `url(${landingImage})` }} />
-    </section>
+      <header className="landing-nav">
+        <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> ورود / ثبت‌نام</Link>
+        <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{label}</a>)}</nav>
+        <div className="landing-logo"><strong>تناسب</strong><span><Activity size={18} /></span></div>
+      </header>
+
+      <section className="landing-hero">
+        <div className="landing-hero-text">
+          <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
+          <h1>بهترین نسخه<br /><span>خودت باش</span></h1>
+          <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
+          <div className="landing-cta-row">
+            <Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link>
+            <button className="landing-btn landing-btn-ghost"><Play size={15} /> تماشای معرفی باشگاه</button>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <section className="landing-features">
       <p className="landing-eyebrow center">چرا تناسب؟</p>
