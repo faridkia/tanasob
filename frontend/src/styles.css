@@ -613,7 +613,7 @@ input:focus, select:focus {
   box-shadow: 0 24px 60px rgba(16, 24, 40, .3);
   padding: 1.5rem;
 }
-.modal-close { position: absolute; top: 1rem; left: 1rem; }
+.modal-close { position: absolute; top: 1rem; left: 1rem; z-index: 3; }
 .plan-modal-image {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -635,6 +635,21 @@ input:focus, select:focus {
   background: rgba(10, 13, 18, .5);
   color: #fff; font-size: .85rem; font-weight: 600;
 }
+.plan-modal-image.zoomable { cursor: zoom-in; }
+.image-lightbox {
+  position: fixed; inset: 0;
+  z-index: 80;
+  background: rgba(5, 7, 13, .9);
+  display: grid; place-items: center;
+  padding: 2rem;
+}
+.image-lightbox img {
+  max-width: min(100%, 900px);
+  max-height: 90vh;
+  border-radius: var(--radius);
+  object-fit: contain;
+}
+.image-lightbox .modal-close { position: fixed; top: 1.25rem; left: 1.25rem; background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .2); }
 .plan-upload-button { width: 100%; margin-top: .75rem; }
 .modal-card h2 { font-size: 1.25rem; margin: 1.1rem 0 .2rem; }
 .plan-modal-meta { color: var(--muted); font-size: .82rem; margin-bottom: 1rem; }

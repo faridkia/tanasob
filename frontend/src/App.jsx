@@ -417,6 +417,7 @@ function PlanRow({ plan, config, onOpen }) {
 
 function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, setMessage }) {
   const [uploading, setUploading] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
   const fileInputRef = useRef(null)
   const Icon = config.icon
 
@@ -434,10 +435,14 @@ function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, s
   return <div className="modal-overlay" onClick={onClose}>
     <div className="modal-card" onClick={(e) => e.stopPropagation()}>
       <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-      <div className="plan-modal-image">
+      <div className={plan.image ? 'plan-modal-image zoomable' : 'plan-modal-image'} onClick={() => plan.image && setZoomed(true)}>
         {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="plan-modal-placeholder"><Icon size={30} /><span>عکسی ثبت نشده</span></div>}
         {uploading && <div className="plan-modal-uploading">در حال آپلود...</div>}
       </div>
+      {zoomed && <div className="image-lightbox" onClick={() => setZoomed(false)}>
+        <button className="icon-button modal-close" onClick={() => setZoomed(false)}><X size={17} /></button>
+        <img src={plan.image} alt={plan.title} />
+      </div>}
       {canEdit && <>
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files?.[0])} />
         <button className="button muted plan-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
