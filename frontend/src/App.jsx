@@ -10,6 +10,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 
 import api, { errorMessage, getItems } from './api'
 import gymLoginImage from './assets/gym-login.png'
+import landingImage from './assets/landingimage.png'
 
 const roleLabel = { MEMBER: 'عضو', TRAINER: 'مربی', ADMIN: 'مدیر' }
 const formatDate = (value) => value && new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date(value))
@@ -86,14 +87,14 @@ function Landing() {
     <section className="landing-hero">
       <div className="landing-hero-text">
         <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
-        <h1>بهترین نسخه<br />از <span>خودت باش</span></h1>
+        <h1>بهترین نسخه<br /><span>خودت باش</span></h1>
         <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
         <div className="landing-cta-row">
           <Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link>
           <button className="landing-btn landing-btn-ghost"><Play size={15} /> تماشای معرفی باشگاه</button>
         </div>
       </div>
-      <div className="landing-hero-image" style={{ backgroundImage: `url(${gymLoginImage})` }} />
+      <div className="landing-hero-image" style={{ backgroundImage: `url(${landingImage})` }} />
     </section>
 
     <section className="landing-features">

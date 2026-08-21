@@ -919,13 +919,16 @@ input:focus, select:focus {
 .landing {
   background: #05070d;
   color: #f4f6fa;
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .landing-nav {
+  flex: none;
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem;
-  padding: 1.5rem clamp(1.25rem, 5vw, 4rem) 0;
+  padding: 1.25rem clamp(1.25rem, 5vw, 4rem) 0;
   position: relative;
   z-index: 2;
 }
@@ -967,27 +970,28 @@ input:focus, select:focus {
   display: grid;
   grid-template-columns: 1.05fr 1fr;
   align-items: center;
-  min-height: 88vh;
-  padding: 2rem clamp(1.25rem, 5vw, 4rem);
+  flex: 1;
+  min-height: 0;
+  padding: .5rem clamp(1.25rem, 5vw, 4rem);
   gap: 2rem;
 }
 .landing-hero-text { position: relative; z-index: 2; max-width: 32rem; }
 .landing-eyebrow {
   color: #2496ed;
   font-weight: 700;
-  font-size: .9rem;
-  margin-bottom: 1rem;
+  font-size: .88rem;
+  margin-bottom: .7rem;
 }
-.landing-eyebrow.center { text-align: center; margin-bottom: .6rem; }
+.landing-eyebrow.center { text-align: center; margin-bottom: .5rem; }
 .landing-hero-text h1 {
-  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
   line-height: 1.25;
   font-weight: 800;
   color: #fff;
-  margin: 0 0 1.3rem;
+  margin: 0 0 .9rem;
 }
 .landing-hero-text h1 span { color: #2f8fff; }
-.landing-hero-desc { color: #b7bfd0; font-size: 1.02rem; line-height: 1.9; margin-bottom: 2rem; }
+.landing-hero-desc { color: #b7bfd0; font-size: .96rem; line-height: 1.75; margin-bottom: 1.4rem; }
 .landing-cta-row { display: flex; flex-wrap: wrap; gap: .9rem; }
 .landing-btn {
   display: inline-flex; align-items: center; gap: .5rem;
@@ -1028,11 +1032,12 @@ input:focus, select:focus {
 }
 
 .landing-features {
-  padding: 3.5rem clamp(1.25rem, 5vw, 4rem) 5rem;
+  flex: none;
+  padding: 1.4rem clamp(1.25rem, 5vw, 4rem) 1.6rem;
   text-align: center;
   border-top: 1px solid rgba(255, 255, 255, .06);
 }
-.landing-features h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 800; color: #fff; margin: 0 0 2.75rem; }
+.landing-features h2 { font-size: clamp(1.15rem, 2.2vw, 1.5rem); font-weight: 800; color: #fff; margin: 0 0 1.3rem; }
 .landing-features-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1042,19 +1047,23 @@ input:focus, select:focus {
 }
 .landing-feature { text-align: center; }
 .landing-feature span {
-  width: 52px; height: 52px;
-  margin: 0 auto .9rem;
+  width: 42px; height: 42px;
+  margin: 0 auto .6rem;
   display: grid; place-items: center;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(36, 150, 237, .4);
   background: rgba(36, 150, 237, .08);
   color: #4faaf0;
 }
-.landing-feature strong { display: block; color: #fff; font-size: 1rem; margin-bottom: .5rem; }
-.landing-feature p { color: #9aa3b6; font-size: .85rem; line-height: 1.7; margin: 0; }
+.landing-feature strong { display: block; color: #fff; font-size: .94rem; margin-bottom: .3rem; }
+.landing-feature p { color: #9aa3b6; font-size: .8rem; line-height: 1.55; margin: 0; }
 
 @media (max-width: 980px) {
-  .landing-hero { grid-template-columns: 1fr; min-height: auto; padding-top: 2.5rem; }
+  /* Fitting nav + hero + features in one screen only works with room to
+     breathe (desktop); below that, let the page scroll instead of
+     clipping content. */
+  .landing { height: auto; min-height: 100vh; overflow: visible; }
+  .landing-hero { grid-template-columns: 1fr; flex: none; padding-top: 2.5rem; }
   .landing-hero-text { max-width: none; }
   .landing-hero-image { position: relative; inset: auto; width: 100%; height: 260px; order: -1; margin: -1rem -1.25rem 1.5rem; }
   .landing-hero-image::after { background: linear-gradient(to top, #05070d 0%, transparent 45%); }
