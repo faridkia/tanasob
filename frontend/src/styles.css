@@ -1032,7 +1032,7 @@ input:focus, select:focus {
 .landing-hero-image {
   position: absolute;
   inset: 0 0 0 auto;
-  width: 68%;
+  width: 70%;
   background-size: cover;
   background-position: center;
   z-index: 1;
