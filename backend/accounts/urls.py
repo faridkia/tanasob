@@ -10,6 +10,7 @@ urlpatterns = [
     path('me/', views.MeView.as_view(), name='me'),
     path('me/qr/', views.MyQRCodeView.as_view(), name='me-qr'),
     path('change-password/', views.ChangePasswordView.as_view(), name='change-password'),
+    path('trainers/', views.TrainerListView.as_view(), name='trainers-list'),
     path(
         'assignments/',
         views.TrainerMemberAssignmentView.as_view(),

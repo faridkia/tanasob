@@ -484,8 +484,76 @@ function TrainerPanel() {
 
 function AdminPanel() {
   const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [message, setMessage] = useState('')
-  useEffect(() => { Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e))) }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div></section>
+  const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [sessions, setSessions] = useState([])
+  const loadCatalog = () => Promise.all([api.get('/classes/'), api.get('/auth/trainers/'), api.get('/sessions/')]).then(([a, b, c]) => { setClasses(getItems(a.data)); setTrainers(getItems(b.data)); setSessions(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => {
+    Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e)))
+    loadCatalog()
+  }, [])
+  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><ClassSessionManager classes={classes} trainers={trainers} sessions={sessions} onChanged={loadCatalog} setMessage={setMessage} /></section>
+}
+
+function ClassSessionManager({ classes, trainers, sessions, onChanged, setMessage }) {
+  const [classForm, setClassForm] = useState({ name: '', category: '', description: '' })
+  const [classBusy, setClassBusy] = useState(false)
+  const createClass = async (event) => {
+    event.preventDefault()
+    if (!classForm.name) return
+    setClassBusy(true)
+    try {
+      await api.post('/classes/', classForm)
+      setClassForm({ name: '', category: '', description: '' })
+      setMessage('کلاس جدید اضافه شد.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setClassBusy(false) }
+  }
+
+  const [sessionForm, setSessionForm] = useState({ gym_class: '', trainer: '', session_date: '', start_time: '', end_time: '', capacity: 15 })
+  const [sessionBusy, setSessionBusy] = useState(false)
+  const createSession = async (event) => {
+    event.preventDefault()
+    if (!sessionForm.gym_class || !sessionForm.trainer || !sessionForm.session_date || !sessionForm.start_time || !sessionForm.end_time) return
+    setSessionBusy(true)
+    try {
+      await api.post('/sessions/', sessionForm)
+      setSessionForm({ ...sessionForm, session_date: '', start_time: '', end_time: '' })
+      setMessage('جلسه جدید ساخته شد و به مربی اختصاص یافت.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setSessionBusy(false) }
+  }
+
+  return <>
+    <div className="content-grid">
+      <Card title="ساخت کلاس جدید">
+        <form onSubmit={createClass} className="form-grid compact">
+          <Field label="نام کلاس" value={classForm.name} onChange={(name) => setClassForm({ ...classForm, name })} required />
+          <Field label="دسته‌بندی" value={classForm.category} onChange={(category) => setClassForm({ ...classForm, category })} />
+          <Field label="توضیحات" value={classForm.description} onChange={(description) => setClassForm({ ...classForm, description })} />
+          <button className="button primary" disabled={classBusy}>افزودن کلاس <Plus size={17} /></button>
+        </form>
+      </Card>
+      <Card title="ساخت جلسه و اختصاص مربی">
+        <form onSubmit={createSession} className="form-grid compact">
+          <label>کلاس<select value={sessionForm.gym_class} onChange={(e) => setSessionForm({ ...sessionForm, gym_class: e.target.value })} required>
+            <option value="">انتخاب کلاس</option>
+            {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></label>
+          <label>مربی<select value={sessionForm.trainer} onChange={(e) => setSessionForm({ ...sessionForm, trainer: e.target.value })} required>
+            <option value="">انتخاب مربی</option>
+            {trainers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+          </select></label>
+          <Field label="تاریخ" type="date" value={sessionForm.session_date} onChange={(session_date) => setSessionForm({ ...sessionForm, session_date })} required />
+          <Field label="ساعت شروع" type="time" value={sessionForm.start_time} onChange={(start_time) => setSessionForm({ ...sessionForm, start_time })} required />
+          <Field label="ساعت پایان" type="time" value={sessionForm.end_time} onChange={(end_time) => setSessionForm({ ...sessionForm, end_time })} required />
+          <Field label="ظرفیت" type="number" value={sessionForm.capacity} onChange={(capacity) => setSessionForm({ ...sessionForm, capacity })} required />
+          <button className="button primary" disabled={sessionBusy}>ساخت جلسه <Plus size={17} /></button>
+        </form>
+      </Card>
+    </div>
+    <Card title="کلاس‌های موجود">
+      {classes.length ? classes.map((c) => <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><span className="capacity">{sessions.filter((s) => s.gym_class === c.id).length} جلسه</span></div>) : <Empty text="هنوز کلاسی ثبت نشده است." />}
+    </Card>
+  </>
 }
 
 function Profile({ user, setUser }) {

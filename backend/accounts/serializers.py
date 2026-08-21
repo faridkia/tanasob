@@ -25,6 +25,16 @@ class TrainerProfileSerializer(serializers.ModelSerializer):
         fields = ('specialization', 'bio', 'experience_years')
 
 
+class TrainerListSerializer(serializers.ModelSerializer):
+    """Minimal trainer roster for admin pickers (e.g. assigning a session)."""
+
+    full_name = serializers.CharField(source='user.full_name', read_only=True)
+
+    class Meta:
+        model = Trainer
+        fields = ('id', 'full_name', 'specialization')
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Read serializer for a user, including the role-specific profile."""
 
