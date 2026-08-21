@@ -966,16 +966,19 @@ input:focus, select:focus {
 .landing-auth-btn:hover { background: rgba(255, 255, 255, .12); border-color: rgba(255, 255, 255, .22); }
 
 .landing-hero {
+  /* Forced ltr so the text block is physically pinned to the left
+     regardless of the page's RTL direction — under dir=rtl, grid/flex
+     placement puts the first child on the right by default, which put
+     the text underneath the (also physically-right-pinned) hero photo. */
+  direction: ltr;
   position: relative;
-  display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  display: flex;
   align-items: center;
   flex: 1;
   min-height: 0;
   padding: .5rem clamp(1.25rem, 5vw, 4rem);
-  gap: 2rem;
 }
-.landing-hero-text { position: relative; z-index: 2; max-width: 32rem; }
+.landing-hero-text { direction: rtl; text-align: right; position: relative; z-index: 2; max-width: 32rem; }
 .landing-eyebrow {
   color: #2496ed;
   font-weight: 700;
@@ -1018,7 +1021,7 @@ input:focus, select:focus {
 .landing-hero-image {
   position: absolute;
   inset: 0 0 0 auto;
-  width: 62%;
+  width: 72%;
   background-size: cover;
   background-position: center;
   z-index: 1;
