@@ -18,7 +18,7 @@ from classes.models import ClassSession
 
 from .models import Attendance, Booking
 from .serializers import AttendanceSerializer, BookingSerializer
-from .services import cancel_booking, create_booking
+from .services import cancel_booking, create_booking, match_face
 
 
 class BookingListCreateView(generics.ListCreateAPIView):
@@ -132,12 +132,25 @@ class CheckInView(APIView):
 
             token = request.data.get('token')
             member_id = request.data.get('member')
+            descriptor = request.data.get('descriptor')
             if token:
                 token = str(token).removeprefix('TANASOB-MEMBER:')
                 try:
                     member = Member.objects.get(qr_token=token)
                 except (Member.DoesNotExist, ValueError):
                     return Response({'token': 'QR code not recognized.'}, status=status.HTTP_404_NOT_FOUND)
+            elif descriptor:
+                if not isinstance(descriptor, list) or len(descriptor) != 128:
+                    return Response(
+                        {'descriptor': 'Expected a 128-number face descriptor.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                member, distance = match_face(descriptor, user.organization)
+                if member is None:
+                    return Response(
+                        {'detail': 'No confident face match found.', 'distance': distance},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
             elif member_id:
                 try:
                     member = Member.objects.get(pk=member_id)
@@ -145,7 +158,7 @@ class CheckInView(APIView):
                     return Response({'member': 'Member not found.'}, status=status.HTTP_404_NOT_FOUND)
             else:
                 return Response(
-                    {'member': 'Trainer must specify a member (or scan a QR code) to check in.'},
+                    {'member': 'Trainer must specify a member (or scan a QR code / face) to check in.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:

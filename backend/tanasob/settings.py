@@ -82,6 +82,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'common',
+    'organizations',
     'accounts',
     'memberships',
     'classes',

@@ -12,13 +12,17 @@ from django.db import models
 class GymClass(models.Model):
     """A type/category of class offered by the gym (SRS 6.8)."""
 
-    name = models.CharField(max_length=100, unique=True)
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE, related_name='gym_classes',
+    )
+    name = models.CharField(max_length=100)
     category = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['name']
+        unique_together = ('organization', 'name')
 
     def __str__(self):
         return self.name

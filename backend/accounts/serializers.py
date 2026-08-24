@@ -10,13 +10,28 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from rest_framework import serializers
 
+from organizations.models import Organization
+
 from .models import Member, Trainer, TrainerMemberAssignment, User
 
 
+class OrganizationMiniSerializer(serializers.ModelSerializer):
+    """Minimal org info nested inside UserSerializer (sidebar branding, etc.)."""
+
+    class Meta:
+        model = Organization
+        fields = ('id', 'name', 'slug', 'logo')
+
+
 class MemberProfileSerializer(serializers.ModelSerializer):
+    has_face = serializers.SerializerMethodField()
+
     class Meta:
         model = Member
-        fields = ('date_of_birth', 'gender', 'address')
+        fields = ('date_of_birth', 'gender', 'address', 'has_face')
+
+    def get_has_face(self, obj):
+        return bool(obj.face_descriptor)
 
 
 class TrainerProfileSerializer(serializers.ModelSerializer):
@@ -50,6 +65,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     member = MemberProfileSerializer(source='member_profile', read_only=True)
     trainer = TrainerProfileSerializer(source='trainer_profile', read_only=True)
+    organization = OrganizationMiniSerializer(read_only=True)
 
     class Meta:
         model = User
@@ -63,6 +79,7 @@ class UserSerializer(serializers.ModelSerializer):
             'created_at',
             'member',
             'trainer',
+            'organization',
         )
         read_only_fields = ('id', 'role', 'is_active', 'created_at')
 
@@ -78,6 +95,13 @@ class RegisterSerializer(serializers.ModelSerializer):
     password2 = serializers.CharField(write_only=True, required=True)
     role = serializers.ChoiceField(
         choices=[User.Role.MEMBER, User.Role.TRAINER], default=User.Role.MEMBER
+    )
+    # Which gym this account is joining. Required for self-registration;
+    # AdminUserListCreateView overrides it server-side to the creating
+    # admin's own org, and RegisterOrganizationView sets it after the
+    # Organization itself is created (see organizations.serializers).
+    organization = serializers.PrimaryKeyRelatedField(
+        queryset=Organization.objects.filter(is_active=True), required=True
     )
 
     # Optional profile fields accepted at registration.
@@ -97,6 +121,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             'password',
             'password2',
             'role',
+            'organization',
             'date_of_birth',
             'gender',
             'address',

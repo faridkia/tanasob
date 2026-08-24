@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "face-api.js": "^0.22.2",
+    "framer-motion": "^13.1.1",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",

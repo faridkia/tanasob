@@ -5,20 +5,22 @@ Trainers create/update/archive workout and diet plans for their assigned
 members (FR-PLAN-1..FR-PLAN-4). Members can view their own plans (FR-PLAN-3).
 """
 
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from common.permissions import IsTrainer
+from common.permissions import IsAdminOrTrainer, IsTrainer
 
 from accounts.models import TrainerMemberAssignment
 
-from .models import DietPlan, WorkoutPlan
+from .models import DietPlan, Exercise, WorkoutPlan
 from .serializers import (
     DietPlanImageSerializer,
     DietPlanSerializer,
+    ExerciseSerializer,
     WorkoutPlanImageSerializer,
     WorkoutPlanSerializer,
 )
@@ -31,6 +33,44 @@ def _trainer_member_ids(trainer_user):
             trainer__user=trainer_user, status='ACTIVE'
         ).values_list('member_id', flat=True)
     )
+
+
+class ExerciseListCreateView(generics.ListCreateAPIView):
+    """The exercise library: shared/global exercises plus the gym's own
+    additions. Admin and trainer manage it; every authenticated user reads
+    it (needed to render a plan's exercise names/videos)."""
+
+    serializer_class = ExerciseSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdminOrTrainer()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = Exercise.objects.filter(
+            Q(organization=self.request.user.organization) | Q(organization__isnull=True)
+        )
+        muscle_group = self.request.query_params.get('muscle_group')
+        if muscle_group:
+            qs = qs.filter(muscle_group=muscle_group)
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(name__icontains=search)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(organization=self.request.user.organization)
+
+
+class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ExerciseSerializer
+    permission_classes = [IsAdminOrTrainer]
+
+    def get_queryset(self):
+        # Trainers/admins may only edit their own gym's custom exercises —
+        # the shared/global library (organization=None) is read-only here.
+        return Exercise.objects.filter(organization=self.request.user.organization)
 
 
 class WorkoutPlanListCreateView(generics.ListCreateAPIView):

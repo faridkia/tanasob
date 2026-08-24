@@ -1,6 +1,7 @@
 import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from .managers import UserManager
@@ -16,6 +17,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     full_name = models.CharField(max_length=150)
     phone = models.CharField(max_length=20, blank=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.MEMBER)
+    # Which gym this account belongs to (row-level multi-tenancy). Nullable so
+    # Django superusers created via createsuperuser (platform-level, /admin/
+    # only) don't need to belong to any single gym.
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='users',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -52,8 +60,12 @@ class Member(models.Model):
     gender = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    # 128-length face-api.js descriptor captured client-side at enrollment,
+    # used for face-recognition check-in (see bookings.services.match_face).
+    # Never a raw photo — just the numeric embedding.
+    face_descriptor = models.JSONField(null=True, blank=True)
 
     def __str__(self):
         return f'Member: {self.user.full_name}'
@@ -93,3 +105,12 @@ class TrainerMemberAssignment(models.Model):
 
     def __str__(self):
         return f'{self.trainer.user.full_name} -> {self.member.user.full_name} ({self.status})'
+
+    def clean(self):
+        if self.member_id and self.trainer_id:
+            if self.member.user.organization_id != self.trainer.user.organization_id:
+                raise ValidationError('Member and trainer must belong to the same gym.')
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)

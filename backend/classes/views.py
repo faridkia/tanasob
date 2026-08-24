@@ -18,7 +18,6 @@ from .serializers import ClassSessionSerializer, GymClassSerializer
 class GymClassListCreateView(generics.ListCreateAPIView):
     """List (anyone authenticated) / create (admin) gym classes (FR-CLS-1)."""
 
-    queryset = GymClass.objects.all()
     serializer_class = GymClassSerializer
 
     def get_permissions(self):
@@ -26,11 +25,19 @@ class GymClassListCreateView(generics.ListCreateAPIView):
             return [IsAdmin()]
         return [IsAuthenticated()]
 
+    def get_queryset(self):
+        return GymClass.objects.filter(organization=self.request.user.organization)
+
+    def perform_create(self, serializer):
+        serializer.save(organization=self.request.user.organization)
+
 
 class GymClassDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = GymClass.objects.all()
     serializer_class = GymClassSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return GymClass.objects.filter(organization=self.request.user.organization)
 
 
 class ClassSessionListCreateView(generics.ListCreateAPIView):
@@ -46,7 +53,9 @@ class ClassSessionListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = ClassSession.objects.select_related('gym_class', 'trainer__user')
+        qs = ClassSession.objects.select_related('gym_class', 'trainer__user').filter(
+            gym_class__organization=self.request.user.organization
+        )
         user = self.request.user
 
         # Trainers see their own sessions by default (US-T2).
@@ -68,6 +77,8 @@ class ClassSessionListCreateView(generics.ListCreateAPIView):
 
 
 class ClassSessionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = ClassSession.objects.all()
     serializer_class = ClassSessionSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return ClassSession.objects.filter(gym_class__organization=self.request.user.organization)

@@ -34,13 +34,71 @@ class WorkoutPlan(models.Model):
         return f'Workout: {self.title} for {self.member.user.full_name}'
 
 
-class WorkoutPlanItem(models.Model):
-    """A single exercise entry within a WorkoutPlan (SRS 6.13)."""
+class Exercise(models.Model):
+    """A single reusable exercise definition, optionally with a tutorial video.
+
+    ``organization=None`` means a shared/global library exercise (seeded
+    once, visible to every gym); a set organization means one gym's own
+    custom addition, visible only there.
+    """
+
+    class MuscleGroup(models.TextChoices):
+        CHEST = 'CHEST', 'سینه'
+        BACK = 'BACK', 'پشت'
+        LEGS = 'LEGS', 'پا'
+        SHOULDERS = 'SHOULDERS', 'شانه'
+        ARMS = 'ARMS', 'بازو'
+        CORE = 'CORE', 'شکم'
+        CARDIO = 'CARDIO', 'هوازی'
+        FULL_BODY = 'FULL_BODY', 'کل بدن'
+
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='exercises',
+    )
+    name = models.CharField(max_length=150)
+    muscle_group = models.CharField(
+        max_length=20, choices=MuscleGroup.choices, default=MuscleGroup.FULL_BODY
+    )
+    # A link to a YouTube/Aparat tutorial — embedded in the frontend, not a
+    # hosted file (self-hosting video is out of scope for a capstone VPS).
+    video_url = models.URLField(blank=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class WorkoutDay(models.Model):
+    """One day within a day-split workout plan (e.g. "Day 1 — Push")."""
 
     workout_plan = models.ForeignKey(
-        WorkoutPlan, on_delete=models.CASCADE, related_name='items'
+        WorkoutPlan, on_delete=models.CASCADE, related_name='days'
     )
-    exercise_name = models.CharField(max_length=200)
+    day_number = models.PositiveIntegerField()
+    label = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        unique_together = ('workout_plan', 'day_number')
+        ordering = ['day_number']
+
+    def __str__(self):
+        return f'{self.workout_plan.title} - Day {self.day_number} ({self.label})'
+
+
+class WorkoutPlanItem(models.Model):
+    """A single exercise entry within a WorkoutDay (SRS 6.13)."""
+
+    day = models.ForeignKey(
+        WorkoutDay, on_delete=models.CASCADE, related_name='items',
+    )
+    exercise = models.ForeignKey(
+        Exercise, on_delete=models.PROTECT, related_name='plan_items',
+    )
     sets = models.PositiveIntegerField()
     reps = models.PositiveIntegerField()
     notes = models.TextField(blank=True)
@@ -49,7 +107,7 @@ class WorkoutPlanItem(models.Model):
         ordering = ['id']
 
     def __str__(self):
-        return f'{self.exercise_name}: {self.sets}x{self.reps}'
+        return f'{self.exercise.name}: {self.sets}x{self.reps}'
 
 
 class DietPlan(models.Model):

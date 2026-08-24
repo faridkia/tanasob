@@ -31,6 +31,7 @@ urlpatterns = [
 
     # Business apps
     path('api/auth/', include('accounts.urls')),
+    path('api/', include('organizations.urls')),
     path('api/', include('memberships.urls')),
     path('api/', include('classes.urls')),
     path('api/', include('bookings.urls')),

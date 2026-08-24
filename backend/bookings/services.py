@@ -44,6 +44,36 @@ def create_booking(member, session):
     return booking
 
 
+FACE_MATCH_THRESHOLD = 0.5  # face-api.js euclidean distance; lower = stricter
+
+
+def match_face(descriptor, organization):
+    """Find the Member in ``organization`` whose enrolled face descriptor is
+    closest to ``descriptor`` (a 128-length float list from face-api.js).
+
+    Returns the best-matching Member, or None if nobody is within
+    FACE_MATCH_THRESHOLD (i.e. no confident match — never guess).
+    """
+    from accounts.models import Member
+
+    candidates = Member.objects.filter(
+        user__organization=organization, face_descriptor__isnull=False
+    ).select_related('user')
+
+    best_member, best_distance = None, None
+    for member in candidates:
+        stored = member.face_descriptor
+        if not stored or len(stored) != len(descriptor):
+            continue
+        distance = sum((a - b) ** 2 for a, b in zip(stored, descriptor)) ** 0.5
+        if best_distance is None or distance < best_distance:
+            best_member, best_distance = member, distance
+
+    if best_member is not None and best_distance <= FACE_MATCH_THRESHOLD:
+        return best_member, best_distance
+    return None, best_distance
+
+
 def cancel_booking(booking):
     """Cancel a booking if the session hasn't started yet (FR-BOOK-3)."""
     now = timezone.now()

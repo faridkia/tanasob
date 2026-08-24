@@ -6,9 +6,13 @@ Trainers view progress of their assigned members (FR-PROG-3).
 """
 
 from rest_framework import generics
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounts.models import TrainerMemberAssignment
 
+from .gamification import leaderboard, points_for_member
 from .models import BodyProgress
 from .serializers import BodyProgressSerializer
 
@@ -48,3 +52,26 @@ class BodyProgressDetailView(generics.RetrieveAPIView):
             ).values_list('member_id', flat=True)
             return qs.filter(member_id__in=member_ids)
         return qs
+
+
+class LeaderboardView(APIView):
+    """Gym-wide points leaderboard, computed from attendance/progress/
+    subscription activity — never a stored score, so it can't drift."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        rows = leaderboard(request.user.organization)
+        my_member_id = request.user.member_profile.id if request.user.is_member else None
+        return Response({'leaderboard': rows, 'my_member_id': my_member_id})
+
+
+class MyPointsView(APIView):
+    """The current member's own points/tier breakdown."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_member:
+            return Response({'detail': 'Only members have a points profile.'}, status=400)
+        return Response(points_for_member(request.user.member_profile))

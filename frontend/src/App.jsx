@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, ArrowLeft, Bell, Bot, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
-  ClipboardList, CreditCard, Dumbbell, HeartPulse, ImagePlus, Link2, LayoutDashboard, LogOut, MessageCircle,
+  Activity, ArrowLeft, Bell, Bot, Building2, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
+  ClipboardList, CreditCard, Dumbbell, Edit2, HeartPulse, ImagePlus, Link2, LayoutDashboard, LogOut, MessageCircle,
   Moon, Play, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Trash2, Trophy,
-  UserCheck, UserPlus, UserX, Users, X,
+  UserCheck, UserPlus, UserX, Users, Video, X,
 } from 'lucide-react'
-import { Link, Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 
 import api, { errorMessage, getItems } from './api'
 import gymLoginImage from './assets/gym-login.png'
@@ -60,6 +64,7 @@ function App() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <AuthPage onLogin={login} />} />
       <Route path="/register" element={user ? <Navigate to="/" /> : <AuthPage register onLogin={login} />} />
+      <Route path="/register-gym" element={user ? <Navigate to="/" /> : <RegisterGymPage onLogin={login} />} />
       {!user && <Route path="/" element={<Landing />} />}
       <Route path="*" element={user ? (
         <Shell user={user} setUser={setUser} logout={logout} theme={theme} setTheme={setTheme} />
@@ -88,31 +93,37 @@ function Landing() {
       </header>
 
       <section className="landing-hero">
-        <div className="landing-hero-text">
+        <motion.div className="landing-hero-text" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55, ease: 'easeOut' }}>
           <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
           <h1>بهترین نسخه<br /><span>خودت باش</span></h1>
           <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
           <div className="landing-cta-row">
-            <Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link>
-            <button className="landing-btn landing-btn-ghost"><Play size={15} /> تماشای معرفی باشگاه</button>
+            <motion.div whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link></motion.div>
+            <motion.button className="landing-btn landing-btn-ghost" whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Play size={15} /> تماشای معرفی باشگاه</motion.button>
           </div>
-        </div>
+          <Link to="/register-gym" className="landing-gym-cta"><Building2 size={15} /> صاحب باشگاهی؟ باشگاه خودت را در تناسب ثبت کن</Link>
+        </motion.div>
       </section>
     </div>
 
     <section className="landing-features">
       <p className="landing-eyebrow center">چرا تناسب؟</p>
       <h2>همه چیز برای رسیدن به هدف تو</h2>
-      <div className="landing-features-grid">{LANDING_FEATURES.map(({ icon: Icon, title, text }) => <div className="landing-feature" key={title}><span><Icon size={22} /></span><strong>{title}</strong><p>{text}</p></div>)}</div>
+      <div className="landing-features-grid">{LANDING_FEATURES.map(({ icon: Icon, title, text }, i) => <motion.div className="landing-feature" key={title} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: .4, delay: i * .08 }}><span><Icon size={22} /></span><strong>{title}</strong><p>{text}</p></motion.div>)}</div>
     </section>
   </div>
 }
 
 function AuthPage({ register, onLogin }) {
-  const [form, setForm] = useState({ email: '', password: '', password2: '', full_name: '', phone: '', role: 'MEMBER' })
+  const [form, setForm] = useState({ email: '', password: '', password2: '', full_name: '', phone: '', role: 'MEMBER', organization: '' })
+  const [organizations, setOrganizations] = useState([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
+  useEffect(() => {
+    if (!register) return
+    api.get('/organizations/').then(({ data }) => setOrganizations(getItems(data))).catch(() => {})
+  }, [register])
   const submit = async (event) => {
     event.preventDefault()
     setBusy(true); setError('')
@@ -137,11 +148,57 @@ function AuthPage({ register, onLogin }) {
             <Field label="ایمیل" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
             <Field label="رمز عبور" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
             {register && <><Field label="تکرار رمز عبور" type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
+              <label>باشگاه<select value={form.organization} onChange={(e) => setForm({ ...form, organization: e.target.value })} required>
+                <option value="">انتخاب باشگاه</option>
+                {organizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+              </select></label>
               <label>نوع حساب<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="MEMBER">عضو باشگاه</option><option value="TRAINER">مربی</option></select></label></>}
             {error && <p className="form-error">{error}</p>}
             <button className="button primary" disabled={busy}>{busy ? 'لطفاً صبر کنید...' : register ? 'ساخت حساب' : 'ورود به تناسب'} <ChevronLeft size={18} /></button>
           </form>
           <button className="text-button" onClick={() => navigate(register ? '/login' : '/register')}>{register ? 'حساب داری؟ وارد شو' : 'حساب نداری؟ ثبت‌نام کن'}</button>
+          {register && <Link to="/register-gym" className="text-button"><Building2 size={15} /> می‌خوای باشگاه خودتو ثبت کنی؟</Link>}
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function RegisterGymPage({ onLogin }) {
+  const [form, setForm] = useState({ name: '', address: '', phone: '', email: '', full_name: '', password: '', password2: '' })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const navigate = useNavigate()
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true); setError('')
+    try {
+      const { data } = await api.post('/organizations/register/', form)
+      onLogin(data); navigate('/')
+    } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
+  }
+  return (
+    <main className="auth-page">
+      <section className="auth-intro" style={{ backgroundImage: `url(${gymLoginImage})` }}>
+        <div className="auth-tagline"><h1>تناسب</h1><p>پلتفرم مدیریت باشگاه‌های ورزشی</p></div>
+      </section>
+      <section className="auth-panel">
+        <div className="auth-card">
+          <div className="brand-line"><Building2 /> <strong>ثبت باشگاه جدید</strong></div>
+          <h2>باشگاه خودت را راه‌اندازی کن</h2>
+          <p>یک فضای کاملاً مستقل برای باشگاهت با اولین حساب مدیر بساز.</p>
+          <form onSubmit={submit} className="form-grid">
+            <Field label="نام باشگاه" value={form.name} onChange={(name) => setForm({ ...form, name })} required />
+            <Field label="آدرس" value={form.address} onChange={(address) => setForm({ ...form, address })} />
+            <Field label="تلفن باشگاه" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
+            <Field label="نام و نام خانوادگی مدیر" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
+            <Field label="ایمیل مدیر" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
+            <Field label="رمز عبور" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
+            <Field label="تکرار رمز عبور" type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
+            {error && <p className="form-error">{error}</p>}
+            <button className="button primary" disabled={busy}>{busy ? 'لطفاً صبر کنید...' : 'ساخت باشگاه'} <ChevronLeft size={18} /></button>
+          </form>
+          <button className="text-button" onClick={() => navigate('/register')}>عضو یک باشگاه موجودی؟ ثبت‌نام معمولی</button>
         </div>
       </section>
     </main>
@@ -155,6 +212,7 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
     ['/classes', 'کلاس‌ها', CalendarDays],
     ...(member ? [['/membership', 'اشتراک من', CreditCard], ['/card', 'کارت عضویت', QrCode], ['/progress', 'پیشرفت بدن', Activity]] : []),
     ...(!admin ? [['/plans', trainer ? 'برنامه‌سازی' : 'برنامه‌های من', ClipboardList], ['/messages', 'گفت‌وگوها', MessageCircle]] : []),
+    ['/leaderboard', 'جدول امتیازات', Trophy],
     ...(trainer ? [['/trainer', 'پنل مربی', Users]] : []),
     ...(admin ? [['/admin', 'مدیریت باشگاه', ShieldCheck]] : []),
     ['/notifications', 'اعلان‌ها', Bell],
@@ -163,26 +221,29 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span><Activity /></span><strong>تناسب</strong></div>
+        <div className="logo"><span><Activity /></span><strong>{user.organization?.name || 'تناسب'}</strong></div>
         <nav>{nav.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} />{label}</NavLink>)}</nav>
         <button className="sidebar-bottom" onClick={logout}><LogOut size={18} /> خروج از حساب</button>
       </aside>
       <div className="mobile-nav">{nav.slice(0, 5).map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={18} /><span>{label}</span></NavLink>)}</div>
       <main className="workspace">
         <header className="topbar"><div><h1>سلام، {user.full_name?.split(' ')[0]} 👋</h1></div><div className="top-actions"><button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button><NavLink className="icon-button" to="/notifications"><Bell size={19} /></NavLink></div></header>
-        <Routes>
-          <Route path="/" element={<Dashboard user={user} />} />
-          <Route path="/membership" element={member ? <Memberships /> : <Navigate to="/" />} />
-          <Route path="/card" element={member ? <MembershipCard user={user} /> : <Navigate to="/" />} />
-          <Route path="/classes" element={<Classes user={user} />} />
-          <Route path="/plans" element={!admin ? <Plans user={user} /> : <Navigate to="/" />} />
-          <Route path="/progress" element={member ? <Progress /> : <Navigate to="/" />} />
-          <Route path="/messages" element={!admin ? <Messages user={user} /> : <Navigate to="/" />} />
-          <Route path="/notifications" element={<Notifications />} />
-          <Route path="/trainer" element={trainer ? <TrainerPanel /> : <Navigate to="/" />} />
-          <Route path="/admin" element={admin ? <AdminPanel /> : <Navigate to="/" />} />
-          <Route path="/profile" element={<Profile user={user} setUser={setUser} />} />
-        </Routes>
+        <PageTransition>
+          <Routes>
+            <Route path="/" element={<Dashboard user={user} />} />
+            <Route path="/membership" element={member ? <Memberships /> : <Navigate to="/" />} />
+            <Route path="/card" element={member ? <MembershipCard user={user} /> : <Navigate to="/" />} />
+            <Route path="/classes" element={<Classes user={user} />} />
+            <Route path="/plans" element={!admin ? <Plans user={user} /> : <Navigate to="/" />} />
+            <Route path="/progress" element={member ? <Progress /> : <Navigate to="/" />} />
+            <Route path="/messages" element={!admin ? <Messages user={user} /> : <Navigate to="/" />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/trainer" element={trainer ? <TrainerPanel /> : <Navigate to="/" />} />
+            <Route path="/admin" element={admin ? <AdminPanel /> : <Navigate to="/" />} />
+            <Route path="/profile" element={<Profile user={user} setUser={setUser} />} />
+          </Routes>
+        </PageTransition>
       </main>
       <AssistantWidget />
     </div>
@@ -247,23 +308,58 @@ function AssistantWidget() {
     if (!open) chat.ensureLoaded()
   }
   return <>
-    {open && <div className="assistant-popover">
-      <header><span className="assistant-title"><Bot size={17} /> یار هوشمند تناسب</span><button className="icon-button" onClick={() => setOpen(false)}><X size={16} /></button></header>
-      <AssistantPanel {...chat} />
-    </div>}
-    <button className="assistant-fab" onClick={toggle} aria-label="یار هوشمند">{open ? <X size={22} /> : <Bot size={22} />}</button>
+    <AnimatePresence>
+      {open && <motion.div className="assistant-popover" initial={{ opacity: 0, y: 16, scale: .96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: .96 }} transition={{ duration: .18, ease: 'easeOut' }}>
+        <header><span className="assistant-title"><Bot size={17} /> یار هوشمند تناسب</span><button className="icon-button" onClick={() => setOpen(false)}><X size={16} /></button></header>
+        <AssistantPanel {...chat} />
+      </motion.div>}
+    </AnimatePresence>
+    <motion.button className="assistant-fab" onClick={toggle} aria-label="یار هوشمند" whileTap={{ scale: .9 }} whileHover={{ scale: 1.06 }}>{open ? <X size={22} /> : <Bot size={22} />}</motion.button>
   </>
 }
 
 function Dashboard({ user }) {
   const [data, setData] = useState({ sessions: [], plans: [], notices: [] })
+  const [points, setPoints] = useState(null)
   useEffect(() => {
     Promise.all([api.get('/sessions/'), api.get('/notifications/'), ...(user.role !== 'ADMIN' ? [api.get('/workout-plans/')] : [])]).then((responses) => setData({
       sessions: getItems(responses[0].data).slice(0, 4), notices: getItems(responses[1].data).slice(0, 3), plans: responses[2] ? getItems(responses[2].data) : [],
     })).catch(() => {})
+    if (user.role === 'MEMBER') api.get('/progress/me/points/').then(({ data }) => setPoints(data)).catch(() => {})
   }, [user.role])
   const metrics = user.role === 'MEMBER' ? [['کلاس‌های پیش رو', data.sessions.length, CalendarDays], ['برنامه‌های فعال', data.plans.length, ClipboardList]] : user.role === 'TRAINER' ? [['جلسات این هفته', data.sessions.length, CalendarDays], ['برنامه‌های فعال', data.plans.length, ClipboardList], ['تمرکز امروز', '۴ جلسه', Dumbbell]] : [['کلاس‌های فعال', data.sessions.length, CalendarDays], ['اعلان‌های تازه', data.notices.length, Bell], ['وضعیت سیستم', 'پایدار', ShieldCheck]]
-  return <section className="page-stack"><section className="hero-card "><div><p className="eyebrow">نمای کلی</p><h2>{user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه'}</h2><p>جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></section><section className="metric-grid">{metrics.map(([label, value, Icon]) => <article className="metric-card " key={label}><span><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></article>)}</section><section className="content-grid"><Card title="جلسات نزدیک" action="/classes">{data.sessions.length ? data.sessions.map((session) => <div className="list-row" key={session.id}><div className="date-chip"><b>{formatDate(session.session_date)}</b></div><div><strong>{session.gym_class_name}</strong><small>{session.trainer_name} · {session.start_time?.slice(0, 5)}</small></div>{user.role !== 'MEMBER' && <span className="capacity">{session.remaining_capacity} جای خالی</span>}</div>) : <Empty text="جلسه‌ای برای نمایش نیست." />}</Card><Card title="آخرین اعلان‌ها" action="/notifications">{data.notices.length ? data.notices.map((notice) => <div className="list-row" key={notice.id}><span className="notice-dot" /><div><strong>{notice.title}</strong><small>{notice.message}</small></div></div>) : <Empty text="اعلان تازه‌ای نداری." />}</Card></section></section>
+  return <section className="page-stack"><motion.section className="hero-card " initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .4 }}><div><p className="eyebrow">نمای کلی</p><h2>{user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه'}</h2><p>جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></motion.section>
+    {points && <PointsCard points={points} />}
+    <section className="metric-grid">{metrics.map(([label, value, Icon], i) => <motion.article className="metric-card " key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .06 }}><span><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></motion.article>)}</section>
+    <section className="content-grid"><Card title="جلسات نزدیک" action="/classes">{data.sessions.length ? data.sessions.map((session) => <div className="list-row" key={session.id}><div className="date-chip"><b>{formatDate(session.session_date)}</b></div><div><strong>{session.gym_class_name}</strong><small>{session.trainer_name} · {session.start_time?.slice(0, 5)}</small></div>{user.role !== 'MEMBER' && <span className="capacity">{session.remaining_capacity} جای خالی</span>}</div>) : <Empty text="جلسه‌ای برای نمایش نیست." />}</Card><Card title="آخرین اعلان‌ها" action="/notifications">{data.notices.length ? data.notices.map((notice) => <div className="list-row" key={notice.id}><span className="notice-dot" /><div><strong>{notice.title}</strong><small>{notice.message}</small></div></div>) : <Empty text="اعلان تازه‌ای نداری." />}</Card></section></section>
+}
+
+function PointsCard({ points }) {
+  const progressPct = points.next_tier ? Math.min(100, Math.round((points.points / (points.points + points.next_tier.points_needed)) * 100)) : 100
+  return <motion.section className="points-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, delay: .1 }}>
+    <div className="points-card-top">
+      <span className="points-tier-emoji">{points.tier_emoji}</span>
+      <div><strong>{points.points} امتیاز</strong><small>سطح {points.tier}</small></div>
+      <Link to="/leaderboard" className="text-button">جدول امتیازات</Link>
+    </div>
+    <div className="points-bar"><motion.div className="points-bar-fill" initial={{ width: 0 }} animate={{ width: `${progressPct}%` }} transition={{ duration: .6, ease: 'easeOut' }} /></div>
+    {points.next_tier && <small className="points-next">{points.next_tier.points_needed} امتیاز تا سطح {points.next_tier.tier} {points.next_tier.tier_emoji}</small>}
+  </motion.section>
+}
+
+function Leaderboard() {
+  const [rows, setRows] = useState([]); const [myId, setMyId] = useState(null); const [message, setMessage] = useState('')
+  useEffect(() => { api.get('/progress/leaderboard/').then(({ data }) => { setRows(data.leaderboard); setMyId(data.my_member_id) }).catch((e) => setMessage(errorMessage(e))) }, [])
+  return <section className="page-stack"><PageTitle title="جدول امتیازات" text="امتیاز از حضور در کلاس‌ها، ثبت پیشرفت بدن و داشتن اشتراک فعال به‌دست می‌آید." /><Message text={message} />
+    <Card title="رتبه‌بندی اعضا">
+      {rows.length ? rows.map((row, i) => <motion.div className={`leaderboard-row ${row.member_id === myId ? 'me' : ''}`} key={row.member_id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .25, delay: i * .03 }}>
+        <span className={`rank-badge rank-${row.rank <= 3 ? row.rank : 'other'}`}>{row.rank}</span>
+        <div><strong>{row.full_name}</strong><small>{row.attendance_count} حضور</small></div>
+        <span className="points-tier-emoji small">{row.tier_emoji}</span>
+        <strong className="capacity">{row.points} امتیاز</strong>
+      </motion.div>) : <Empty text="هنوز داده‌ای برای رتبه‌بندی وجود ندارد." />}
+    </Card>
+  </section>
 }
 
 function Memberships() {
@@ -344,6 +440,112 @@ function QRCheckIn({ sessions, sessionId, setSessionId, onScan }) {
   return <section className="content-card scanner-card"><header><h3><QrCode size={18} /> ثبت حضور با اسکن QR</h3></header><div className="scanner-controls"><select value={sessionId} onChange={(e) => setSessionId(e.target.value)}><option value="">انتخاب جلسه...</option>{sessions.map((session) => <option value={session.id} key={session.id}>{session.gym_class_name} · {formatDate(session.session_date)}</option>)}</select>{active ? <button className="button muted" onClick={stop}><X size={16} /> توقف اسکن</button> : <button className="button primary" onClick={start}><Camera size={16} /> شروع اسکن</button>}</div>{error && <p className="form-error">{error}</p>}<div className={`scanner-frame ${active ? 'active' : ''}`}><video ref={videoRef} playsInline muted className={active ? '' : 'hidden'} />{!active && <div className="scanner-placeholder"><ScanLine size={28} /><span>دوربین برای اسکن کارت عضویت اعضا</span></div>}</div><canvas ref={canvasRef} className="hidden" /></section>
 }
 
+const FACE_MODELS_URL = '/face-models'
+let faceModelsPromise = null
+// face-api.js pulls in a ~1MB TensorFlow.js runtime — dynamically imported
+// so it only loads for users who actually open a face scanner, not on
+// every page load.
+function loadFaceModels() {
+  faceModelsPromise ??= import('face-api.js').then((faceapi) =>
+    Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODELS_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODELS_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODELS_URL),
+    ]).then(() => faceapi)
+  )
+  return faceModelsPromise
+}
+
+function FaceScanner({ title, hint, onCapture, disabled }) {
+  const [modelsReady, setModelsReady] = useState(false)
+  const [active, setActive] = useState(false)
+  const [status, setStatus] = useState('')
+  const [busy, setBusy] = useState(false)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const faceapiRef = useRef(null)
+
+  useEffect(() => { loadFaceModels().then((faceapi) => { faceapiRef.current = faceapi; setModelsReady(true) }).catch(() => setStatus('بارگذاری مدل تشخیص چهره ناموفق بود.')) }, [])
+
+  const stop = () => {
+    setActive(false)
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+  }
+  useEffect(() => stop, [])
+
+  const start = async () => {
+    setStatus('')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      streamRef.current = stream
+      videoRef.current.srcObject = stream
+      await videoRef.current.play()
+      setActive(true)
+    } catch {
+      setStatus('دسترسی به دوربین ممکن نشد.')
+    }
+  }
+
+  const capture = async () => {
+    if (!videoRef.current) return
+    setBusy(true)
+    setStatus('در حال تحلیل چهره...')
+    try {
+      const faceapi = faceapiRef.current
+      const detection = await faceapi
+        .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks()
+        .withFaceDescriptor()
+      if (!detection) {
+        setStatus('چهره‌ای پیدا نشد. مستقیم به دوربین نگاه کن و دوباره امتحان کن.')
+        return
+      }
+      await onCapture(Array.from(detection.descriptor))
+      stop()
+    } catch {
+      setStatus('خطایی در پردازش چهره رخ داد.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="face-scanner">
+    {title && <h4>{title}</h4>}
+    {hint && <p className="face-scanner-hint">{hint}</p>}
+    <div className={`scanner-frame ${active ? 'active' : ''}`}>
+      <video ref={videoRef} playsInline muted className={active ? '' : 'hidden'} />
+      {!active && <div className="scanner-placeholder"><ScanLine size={28} /><span>{modelsReady ? 'دوربین برای اسکن چهره' : 'در حال آماده‌سازی مدل هوش مصنوعی...'}</span></div>}
+    </div>
+    {status && <p className="form-message">{status}</p>}
+    <div className="scanner-controls">
+      {active
+        ? <><button className="button primary" onClick={capture} disabled={busy || disabled}><Camera size={16} /> {busy ? 'در حال تحلیل...' : 'ثبت چهره'}</button><button className="button muted" onClick={stop}><X size={16} /> توقف</button></>
+        : <button className="button primary" onClick={start} disabled={!modelsReady || disabled}><Camera size={16} /> شروع دوربین</button>}
+    </div>
+  </div>
+}
+
+function FaceCheckIn({ sessions, sessionId, setSessionId, onScan }) {
+  const [error, setError] = useState('')
+  const capture = async (descriptor) => {
+    if (!sessionId) { setError('اول یک جلسه انتخاب کن.'); return }
+    setError('')
+    await onScan(descriptor, sessionId)
+  }
+  return <section className="content-card scanner-card">
+    <header><h3><Sparkles size={18} /> ثبت حضور با تشخیص چهره</h3></header>
+    <div className="scanner-controls">
+      <select value={sessionId} onChange={(e) => setSessionId(e.target.value)}>
+        <option value="">انتخاب جلسه...</option>
+        {sessions.map((session) => <option value={session.id} key={session.id}>{session.gym_class_name} · {formatDate(session.session_date)}</option>)}
+      </select>
+    </div>
+    {error && <p className="form-error">{error}</p>}
+    <FaceScanner hint="عضو باید قبلاً چهره‌اش را از صفحه پروفایل ثبت کرده باشد." onCapture={capture} />
+  </section>
+}
+
 function Classes({ user }) {
   const admin = user.role === 'ADMIN'
   const [sessions, setSessions] = useState([]); const [bookings, setBookings] = useState([]); const [attendance, setAttendance] = useState([]); const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [message, setMessage] = useState('')
@@ -375,6 +577,7 @@ const PLAN_KINDS = {
     label: 'تمرین',
     icon: Dumbbell,
     itemUnit: 'حرکت',
+    daySplit: true,
     itemLine: (item) => <><strong>{item.exercise_name}</strong>{item.notes && <small>{item.notes}</small>}</>,
     itemStat: (item) => `${item.sets}×${item.reps}`,
   },
@@ -386,6 +589,10 @@ const PLAN_KINDS = {
     itemStat: (item) => `${item.calories} کالری`,
   },
 }
+
+const planItemCount = (plan, config) => config.daySplit
+  ? (plan.days || []).reduce((sum, day) => sum + (day.items?.length || 0), 0)
+  : (plan.items?.length || 0)
 
 function Plans({ user }) {
   const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
@@ -402,7 +609,9 @@ function PlanSection({ title, kind, plans, canEdit, archive, onChanged, setMessa
   const config = PLAN_KINDS[kind]
   return <>
     <Card title={title}>{plans.length ? plans.map((plan) => <PlanRow key={plan.id} plan={plan} config={config} onOpen={() => setOpenId(plan.id)} />) : <Empty text={`${title} موجود نیست.`} />}</Card>
-    {openPlan && <PlanModal plan={openPlan} kind={kind} config={config} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
+    <AnimatePresence>
+      {openPlan && <PlanModal plan={openPlan} kind={kind} config={config} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
+    </AnimatePresence>
   </>
 }
 
@@ -411,7 +620,7 @@ function PlanRow({ plan, config, onOpen }) {
   return <button className="plan-list-row" onClick={onOpen}>
     <span className="plan-row-thumb">{plan.image ? <img src={plan.image} alt="" /> : <Icon size={18} />}</span>
     <div><strong>{plan.title}</strong><small>{plan.trainer_name || plan.member_name} · تا {formatDate(plan.end_date)}</small></div>
-    <span className="capacity">{plan.items?.length || 0} {config.itemUnit}</span>
+    <span className="capacity">{planItemCount(plan, config)} {config.itemUnit}</span>
   </button>
 }
 
@@ -432,8 +641,8 @@ function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, s
     } catch (e) { setMessage(errorMessage(e)) } finally { setUploading(false) }
   }
 
-  return <div className="modal-overlay" onClick={onClose}>
-    <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+    <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
       <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
       <div className={plan.image ? 'plan-modal-image zoomable' : 'plan-modal-image'} onClick={() => plan.image && setZoomed(true)}>
         {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="plan-modal-placeholder"><Icon size={30} /><span>عکسی ثبت نشده</span></div>}
@@ -449,10 +658,25 @@ function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, s
       </>}
       <h2>{plan.title}</h2>
       <p className="plan-modal-meta">{plan.trainer_name || plan.member_name} · {formatDate(plan.start_date)} تا {formatDate(plan.end_date)}</p>
-      <div className="plan-modal-items">{plan.items?.map((item) => <div className="plan-modal-item" key={item.id}><div>{config.itemLine(item)}</div><span className="capacity">{config.itemStat(item)}</span></div>)}</div>
+      {config.daySplit ? (
+        <div className="plan-modal-days">
+          {(plan.days || []).map((day) => <div className="plan-day-group" key={day.id}>
+            <h4>{day.label || `روز ${day.day_number}`}</h4>
+            <div className="plan-modal-items">{day.items.map((item) => <div className="plan-modal-item" key={item.id}>
+              <div><strong>{item.exercise_name}</strong>{item.notes && <small>{item.notes}</small>}</div>
+              <div className="plan-item-right">
+                {item.video_url && <a className="icon-button" href={item.video_url} target="_blank" rel="noreferrer" title="ویدئو آموزشی"><Video size={16} /></a>}
+                <span className="capacity">{item.sets}×{item.reps}</span>
+              </div>
+            </div>)}</div>
+          </div>)}
+        </div>
+      ) : (
+        <div className="plan-modal-items">{plan.items?.map((item) => <div className="plan-modal-item" key={item.id}><div>{config.itemLine(item)}</div><span className="capacity">{config.itemStat(item)}</span></div>)}</div>
+      )}
       {canEdit && !plan.is_archived && <button className="button muted" onClick={() => { archive(kind, plan.id); onClose() }}><Settings size={16} /> بایگانی این {config.label}</button>}
-    </div>
-  </div>
+    </motion.div>
+  </motion.div>
 }
 
 const PROGRESS_FACTORS = [
@@ -496,24 +720,74 @@ function Notifications() {
 }
 
 function TrainerPanel() {
-  const [assignments, setAssignments] = useState([]); const [sessions, setSessions] = useState([]); const [attendance, setAttendance] = useState([]); const [message, setMessage] = useState(''); const [scanSession, setScanSession] = useState('')
+  const [assignments, setAssignments] = useState([]); const [sessions, setSessions] = useState([]); const [attendance, setAttendance] = useState([]); const [message, setMessage] = useState(''); const [scanSession, setScanSession] = useState(''); const [faceSession, setFaceSession] = useState(''); const [checkInMode, setCheckInMode] = useState('qr')
   const load = () => Promise.all([api.get('/auth/assignments/'), api.get('/sessions/'), api.get('/attendance/')]).then(([a, b, c]) => { setAssignments(getItems(a.data)); setSessions(getItems(b.data)); setAttendance(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [])
   const announceCheckIn = (status, data) => setMessage(status === 201 ? `حضور ${data.member_name} ثبت شد.` : `${data.member_name} قبلاً برای این جلسه حضور زده بود.`)
   const checkIn = async (member, session) => { try { const { status, data } = await api.post('/attendance/check-in/', { member, session }); announceCheckIn(status, data); load() } catch (e) { setMessage(errorMessage(e)) } }
   const checkInByToken = async (token, session) => { try { const { status, data } = await api.post('/attendance/check-in/', { token, session }); announceCheckIn(status, data); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="پنل مربی" text="اعضا، جلسات و ثبت حضور را یک‌جا مدیریت کن." /><Message text={message} /><QRCheckIn sessions={sessions} sessionId={scanSession} setSessionId={setScanSession} onScan={checkInByToken} /><div className="content-grid"><Card title="اعضای من">{assignments.map((item) => { const attendedIds = new Set(attendance.filter((a) => a.member === item.member).map((a) => a.session)); const available = sessions.filter((session) => !attendedIds.has(session.id)); return <div className="member-checkin-row" key={item.id}><div className="member-checkin-top"><span className="avatar">{item.member_name?.[0]}</span><div><strong>{item.member_name}</strong><small>عضو فعال</small></div></div>{available.length ? <select onChange={(e) => e.target.value && checkIn(item.member, e.target.value)} defaultValue=""><option value="">ثبت حضور در...</option>{available.map((session) => <option value={session.id} key={session.id}>{session.gym_class_name} · {formatDate(session.session_date)}</option>)}</select> : <p className="member-checkin-done"><Check size={15} /> در همه جلسات حضور ثبت شده</p>}</div> }) || <Empty text="عضوی به شما اختصاص داده نشده است." />}</Card><Card title="جلسات من">{sessions.map((session) => <div className="list-row" key={session.id}><span className="session-icon"><CalendarDays size={17} /></span><div><strong>{session.gym_class_name}</strong><small>{formatDate(session.session_date)} · {session.start_time?.slice(0, 5)}</small></div><span className="capacity">{session.booked_count} رزرو</span></div>)}</Card></div></section>
+  const checkInByFace = async (descriptor, session) => { try { const { status, data } = await api.post('/attendance/check-in/', { descriptor, session }); announceCheckIn(status, data); load() } catch (e) { setMessage(errorMessage(e)) } }
+  return <section className="page-stack"><PageTitle title="پنل مربی" text="اعضا، جلسات و ثبت حضور را یک‌جا مدیریت کن." /><Message text={message} />
+    <div className="checkin-mode-toggle">
+      <button className={checkInMode === 'qr' ? 'chip active' : 'chip'} onClick={() => setCheckInMode('qr')}><QrCode size={15} /> اسکن QR</button>
+      <button className={checkInMode === 'face' ? 'chip active' : 'chip'} onClick={() => setCheckInMode('face')}><Sparkles size={15} /> تشخیص چهره</button>
+    </div>
+    {checkInMode === 'qr'
+      ? <QRCheckIn sessions={sessions} sessionId={scanSession} setSessionId={setScanSession} onScan={checkInByToken} />
+      : <FaceCheckIn sessions={sessions} sessionId={faceSession} setSessionId={setFaceSession} onScan={checkInByFace} />}
+    <div className="content-grid"><Card title="اعضای من">{assignments.map((item) => { const attendedIds = new Set(attendance.filter((a) => a.member === item.member).map((a) => a.session)); const available = sessions.filter((session) => !attendedIds.has(session.id)); return <div className="member-checkin-row" key={item.id}><div className="member-checkin-top"><span className="avatar">{item.member_name?.[0]}</span><div><strong>{item.member_name}</strong><small>عضو فعال</small></div></div>{available.length ? <select onChange={(e) => e.target.value && checkIn(item.member, e.target.value)} defaultValue=""><option value="">ثبت حضور در...</option>{available.map((session) => <option value={session.id} key={session.id}>{session.gym_class_name} · {formatDate(session.session_date)}</option>)}</select> : <p className="member-checkin-done"><Check size={15} /> در همه جلسات حضور ثبت شده</p>}</div> }) || <Empty text="عضوی به شما اختصاص داده نشده است." />}</Card><Card title="جلسات من">{sessions.map((session) => <div className="list-row" key={session.id}><span className="session-icon"><CalendarDays size={17} /></span><div><strong>{session.gym_class_name}</strong><small>{formatDate(session.session_date)} · {session.start_time?.slice(0, 5)}</small></div><span className="capacity">{session.booked_count} رزرو</span></div>)}</Card></div></section>
 }
 
 function AdminPanel() {
-  const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [message, setMessage] = useState('')
+  const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [trends, setTrends] = useState(null); const [message, setMessage] = useState('')
   const [users, setUsers] = useState([]); const [members, setMembers] = useState([]); const [trainers, setTrainers] = useState([])
   const loadUsers = () => Promise.all([api.get('/auth/users/'), api.get('/auth/members/'), api.get('/auth/trainers/')]).then(([a, b, c]) => { setUsers(getItems(a.data)); setMembers(getItems(b.data)); setTrainers(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => {
     Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e)))
+    api.get('/reports/trends/').then(({ data }) => setTrends(data)).catch(() => {})
     loadUsers()
   }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section><div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
+  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section>
+    {trends && <AnalyticsCharts trends={trends} />}
+    <div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
+}
+
+function AnalyticsCharts({ trends }) {
+  return <div className="content-grid">
+    <Card title="روند درآمد (۶ ماه اخیر)">
+      {trends.revenue_trend.length ? <div className="progress-chart"><ResponsiveContainer width="100%" height={200}>
+        <LineChart data={trends.revenue_trend} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} />
+          <YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={40} />
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} formatter={(v) => formatPrice(v)} />
+          <Line type="monotone" dataKey="total" stroke="var(--accent)" strokeWidth={2.5} dot={{ r: 3 }} />
+        </LineChart>
+      </ResponsiveContainer></div> : <Empty text="داده‌ای موجود نیست." />}
+    </Card>
+    <Card title="رشد اعضا (۶ ماه اخیر)">
+      {trends.member_growth.length ? <div className="progress-chart"><ResponsiveContainer width="100%" height={200}>
+        <BarChart data={trends.member_growth} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="month" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} />
+          <YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} />
+          <Bar dataKey="count" fill="var(--accent)" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer></div> : <Empty text="داده‌ای موجود نیست." />}
+    </Card>
+    <Card title="حضور بر اساس روز هفته">
+      <div className="progress-chart"><ResponsiveContainer width="100%" height={200}>
+        <BarChart data={trends.weekday_breakdown} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="label" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} />
+          <YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={30} allowDecimals={false} />
+          <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} />
+          <Bar dataKey="count" fill="var(--accent)" radius={[6, 6, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer></div>
+    </Card>
+  </div>
 }
 
 function UserManager({ users, members, trainers, onChanged, setMessage }) {
@@ -591,6 +865,8 @@ function UserManager({ users, members, trainers, onChanged, setMessage }) {
 function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
   const [classForm, setClassForm] = useState({ name: '', category: '', description: '' })
   const [classBusy, setClassBusy] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState({ name: '', category: '', description: '' })
   const createClass = async (event) => {
     event.preventDefault()
     if (!classForm.name) return
@@ -601,6 +877,16 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
       setMessage('کلاس جدید اضافه شد.')
       onChanged()
     } catch (e) { setMessage(errorMessage(e)) } finally { setClassBusy(false) }
+  }
+
+  const startEdit = (c) => { setEditingId(c.id); setEditForm({ name: c.name, category: c.category, description: c.description }) }
+  const saveEdit = async (id) => {
+    try {
+      await api.patch(`/classes/${id}/`, editForm)
+      setEditingId(null)
+      setMessage('کلاس به‌روزرسانی شد.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) }
   }
 
   const [sessionForm, setSessionForm] = useState({ gym_class: '', trainer: '', session_date: '', start_time: '', end_time: '', capacity: 15 })
@@ -652,7 +938,16 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
         </form>
       </Card>
       <Card title="کلاس‌های موجود">
-        {classes.length ? classes.map((c) => <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><button className="icon-button" onClick={() => deleteClass(c.id)} title="حذف کلاس"><Trash2 size={16} /></button></div>) : <Empty text="هنوز کلاسی ثبت نشده است." />}
+        {classes.length ? classes.map((c) => editingId === c.id ? (
+          <div className="list-row class-edit-row" key={c.id}>
+            <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="نام کلاس" />
+            <input value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} placeholder="دسته‌بندی" />
+            <button className="icon-button" onClick={() => saveEdit(c.id)} title="ذخیره"><Check size={16} /></button>
+            <button className="icon-button" onClick={() => setEditingId(null)} title="انصراف"><X size={16} /></button>
+          </div>
+        ) : (
+          <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><button className="icon-button" onClick={() => startEdit(c)} title="ویرایش کلاس"><Edit2 size={16} /></button><button className="icon-button" onClick={() => deleteClass(c.id)} title="حذف کلاس"><Trash2 size={16} /></button></div>
+        )) : <Empty text="هنوز کلاسی ثبت نشده است." />}
       </Card>
     </div>
 }
@@ -660,13 +955,64 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
 function Profile({ user, setUser }) {
   const [form, setForm] = useState({ full_name: user.full_name || '', phone: user.phone || '', ...(user.member || user.trainer || {}) }); const [message, setMessage] = useState('')
   const submit = async (event) => { event.preventDefault(); try { const { data } = await api.patch('/auth/me/', form); setUser({ ...user, ...data }); setMessage('پروفایل با موفقیت به‌روزرسانی شد.') } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="پروفایل من" text="اطلاعات حسابت را به‌روز نگه دار." /><Message text={message} /><Card title="اطلاعات شخصی"><form onSubmit={submit} className="form-grid two"><Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} /><Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />{user.role === 'MEMBER' ? <><Field label="تاریخ تولد" type="date" value={form.date_of_birth || ''} onChange={(date_of_birth) => setForm({ ...form, date_of_birth })} /><Field label="آدرس" value={form.address || ''} onChange={(address) => setForm({ ...form, address })} /></> : user.role === 'TRAINER' ? <><Field label="تخصص" value={form.specialization || ''} onChange={(specialization) => setForm({ ...form, specialization })} /><Field label="سال سابقه" type="number" value={form.experience_years || ''} onChange={(experience_years) => setForm({ ...form, experience_years })} /></> : null}<button className="button primary">ذخیره تغییرات <Check size={17} /></button></form></Card></section>
+  return <section className="page-stack"><PageTitle title="پروفایل من" text="اطلاعات حسابت را به‌روز نگه دار." /><Message text={message} /><Card title="اطلاعات شخصی"><form onSubmit={submit} className="form-grid two"><Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} /><Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />{user.role === 'MEMBER' ? <><Field label="تاریخ تولد" type="date" value={form.date_of_birth || ''} onChange={(date_of_birth) => setForm({ ...form, date_of_birth })} /><Field label="آدرس" value={form.address || ''} onChange={(address) => setForm({ ...form, address })} /></> : user.role === 'TRAINER' ? <><Field label="تخصص" value={form.specialization || ''} onChange={(specialization) => setForm({ ...form, specialization })} /><Field label="سال سابقه" type="number" value={form.experience_years || ''} onChange={(experience_years) => setForm({ ...form, experience_years })} /></> : null}<button className="button primary">ذخیره تغییرات <Check size={17} /></button></form></Card>{user.role === 'MEMBER' && <FaceEnrollCard user={user} setUser={setUser} />}</section>
+}
+
+function FaceEnrollCard({ user, setUser }) {
+  const [message, setMessage] = useState('')
+  const hasFace = user.member?.has_face
+  const enroll = async (descriptor) => {
+    try {
+      await api.post('/auth/me/face/', { descriptor })
+      setUser({ ...user, member: { ...user.member, has_face: true } })
+      setMessage('چهره‌ات با موفقیت ثبت شد. حالا مربی می‌تونه با اسکن چهره حضورت رو ثبت کنه.')
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+  const remove = async () => {
+    try {
+      await api.delete('/auth/me/face/')
+      setUser({ ...user, member: { ...user.member, has_face: false } })
+      setMessage('چهره حذف شد.')
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+  return <Card title="ثبت حضور با تشخیص چهره">
+    <p className="face-scanner-hint">{hasFace ? 'چهره‌ات ثبت شده — مربی می‌تونه بدون کارت یا QR، فقط با اسکن چهره حضورت رو بزنه.' : 'چهره‌ات را یک‌بار ثبت کن تا مربی بتونه با اسکن چهره (بدون نیاز به کارت یا QR) حضورت را بزند.'}</p>
+    <Message text={message} />
+    {hasFace && <button className="button muted" onClick={remove}><Trash2 size={16} /> حذف چهره ثبت‌شده</button>}
+    <FaceScanner onCapture={enroll} />
+  </Card>
 }
 
 function PlanCreator({ assignments, onCreated, onError }) {
   const [kind, setKind] = useState('workout-plans'); const [member, setMember] = useState(''); const [title, setTitle] = useState(''); const [busy, setBusy] = useState(false)
-  const submit = async (event) => { event.preventDefault(); if (!member || !title) return; setBusy(true); try { const item = kind === 'workout-plans' ? { exercise_name: 'حرکت پیشنهادی', sets: 3, reps: 12, notes: '' } : { meal_name: 'وعده اصلی', calories: 500, description: '' }; await api.post(`/${kind}/`, { member, title, start_date: new Date().toISOString().slice(0, 10), end_date: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10), items: [item] }); setTitle(''); onCreated() } catch (e) { onError(errorMessage(e)) } finally { setBusy(false) } }
-  return <Card title="ساخت سریع برنامه"><form className="inline-form" onSubmit={submit}><select value={kind} onChange={(e) => setKind(e.target.value)}><option value="workout-plans">برنامه تمرینی</option><option value="diet-plans">رژیم غذایی</option></select><select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" /><button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button></form></Card>
+  const [exercises, setExercises] = useState([]); const [exercise, setExercise] = useState('')
+  useEffect(() => {
+    if (kind !== 'workout-plans') return
+    api.get('/exercises/').then(({ data }) => { const items = getItems(data); setExercises(items); setExercise(items[0]?.id || '') }).catch(() => {})
+  }, [kind])
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!member || !title) return
+    setBusy(true)
+    try {
+      const start_date = new Date().toISOString().slice(0, 10)
+      const end_date = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
+      if (kind === 'workout-plans') {
+        if (!exercise) { onError('اول یک حرکت از کتابخانه حرکات انتخاب کن.'); setBusy(false); return }
+        await api.post('/workout-plans/', { member, title, start_date, end_date, days: [{ day_number: 1, label: 'روز ۱', items: [{ exercise, sets: 3, reps: 12, notes: '' }] }] })
+      } else {
+        await api.post('/diet-plans/', { member, title, start_date, end_date, items: [{ meal_name: 'وعده اصلی', calories: 500, description: '' }] })
+      }
+      setTitle(''); onCreated()
+    } catch (e) { onError(errorMessage(e)) } finally { setBusy(false) }
+  }
+  return <Card title="ساخت سریع برنامه"><form className="inline-form" onSubmit={submit}>
+    <select value={kind} onChange={(e) => setKind(e.target.value)}><option value="workout-plans">برنامه تمرینی</option><option value="diet-plans">رژیم غذایی</option></select>
+    <select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select>
+    {kind === 'workout-plans' && <select value={exercise} onChange={(e) => setExercise(e.target.value)}><option value="">انتخاب حرکت</option>{exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}</select>}
+    <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" />
+    <button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button>
+  </form></Card>
 }
 
 
@@ -676,6 +1022,20 @@ function Metric({ label, value, icon: Icon }) { return <article className="metri
 function Field({ label, type = 'text', value, onChange, required }) { return <label>{label}<input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} /></label> }
 function Status({ value }) { return <span className={`status ${value?.toLowerCase()}`}>{value === 'ACTIVE' ? 'فعال' : value === 'EXPIRED' ? 'منقضی' : value === 'CANCELLED' ? 'لغو شده' : value}</span> }
 function Empty({ text }) { return <p className="empty">{text}</p> }
-function Message({ text }) { return text ? <p className="form-message">{text}</p> : null }
+function Message({ text }) {
+  return <AnimatePresence>
+    {text && <motion.p className="form-message" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .22 }}>{text}</motion.p>}
+  </AnimatePresence>
+}
+
+function PageTransition({ children }) {
+  const location = useLocation()
+  // React Router swaps <Routes> content the instant the location changes, so
+  // there's no "outgoing" DOM left for an exit animation to play against —
+  // keying on pathname still gives every page a clean fade/slide-in on entry.
+  return <motion.div key={location.pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .22, ease: 'easeOut' }}>
+    {children}
+  </motion.div>
+}
 
 export default App

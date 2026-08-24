@@ -5,6 +5,8 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('exercises/', views.ExerciseListCreateView.as_view(), name='exercise-list'),
+    path('exercises/<int:pk>/', views.ExerciseDetailView.as_view(), name='exercise-detail'),
     path('workout-plans/', views.WorkoutPlanListCreateView.as_view(), name='workoutplan-list'),
     path('workout-plans/<int:pk>/', views.WorkoutPlanDetailView.as_view(), name='workoutplan-detail'),
     path('workout-plans/<int:pk>/archive/', views.ArchiveWorkoutPlanView.as_view(), name='workoutplan-archive'),

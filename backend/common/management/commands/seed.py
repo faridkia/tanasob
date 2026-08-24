@@ -14,7 +14,8 @@ from classes.models import ClassSession, GymClass
 from memberships.models import MembershipPlan, Payment, Subscription
 from messaging.models import Message
 from notifications.models import Notification
-from plans.models import DietPlan, DietPlanItem, WorkoutPlan, WorkoutPlanItem
+from organizations.models import Organization
+from plans.models import DietPlan, DietPlanItem, Exercise, WorkoutDay, WorkoutPlan, WorkoutPlanItem
 from progress.models import BodyProgress
 
 User = get_user_model()
@@ -26,13 +27,16 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         with transaction.atomic():
             self.stdout.write('در حال ایجاد داده‌های نمونه تناسب...')
-            admin = self._create_admin()
-            trainers = self._create_trainers()
-            members = self._create_members()
-            membership_plans = self._create_membership_plans()
+            org, _ = Organization.objects.get_or_create(
+                slug='tanasob', defaults={'name': 'باشگاه تناسب'}
+            )
+            admin = self._create_admin(org)
+            trainers = self._create_trainers(org)
+            members = self._create_members(org)
+            membership_plans = self._create_membership_plans(org)
             self._create_subscriptions(members, membership_plans)
             self._create_assignments(members, trainers)
-            sessions = self._create_classes_and_sessions(trainers)
+            sessions = self._create_classes_and_sessions(org, trainers)
             self._create_bookings_and_attendance(members, sessions)
             self._create_training_and_diet_plans(members, trainers)
             self._create_progress_entries(members)
@@ -46,37 +50,40 @@ class Command(BaseCommand):
         self.stdout.write('  عضو:   ali.rezaei@tanasob.ir / member123')
         self.stdout.write('  عضو:   sara.karimi@tanasob.ir / member123')
 
-    def _upsert_user(self, *, email, full_name, role, phone, password):
+    def _upsert_user(self, *, email, full_name, role, phone, password, organization):
         user, _ = User.objects.get_or_create(
             email=email,
             defaults={
                 'full_name': full_name,
                 'role': role,
                 'phone': phone,
+                'organization': organization,
             },
         )
         user.full_name = full_name
         user.role = role
         user.phone = phone
+        user.organization = organization
         user.is_active = True
         user.set_password(password)
         user.save()
         return user
 
-    def _create_admin(self):
+    def _create_admin(self, org):
         admin = self._upsert_user(
             email='admin@tanasob.ir',
             full_name='مدیر باشگاه تناسب',
             role=User.Role.ADMIN,
             phone='۰۲۱۴۴۰۰۰۰۰۰',
             password='admin123',
+            organization=org,
         )
         admin.is_staff = True
         admin.is_superuser = True
         admin.save(update_fields=['is_staff', 'is_superuser'])
         return admin
 
-    def _create_trainers(self):
+    def _create_trainers(self, org):
         trainer_data = [
             {
                 'email': 'parisa@tanasob.ir',
@@ -111,6 +118,7 @@ class Command(BaseCommand):
                 role=User.Role.TRAINER,
                 phone=data['phone'],
                 password='trainer123',
+                organization=org,
             )
             trainer, _ = Trainer.objects.get_or_create(user=user)
             trainer.specialization = data['specialization']
@@ -120,7 +128,7 @@ class Command(BaseCommand):
             trainers.append(trainer)
         return trainers
 
-    def _create_members(self):
+    def _create_members(self, org):
         member_data = [
             ('علی رضایی', 'ali.rezaei@tanasob.ir', '۰۹۱۳۱۰۰۰۰۰۱', date(1998, 5, 21), 'مرد', 'تهران، پونک'),
             ('سارا کریمی', 'sara.karimi@tanasob.ir', '۰۹۱۳۱۰۰۰۰۰۲', date(1996, 9, 12), 'زن', 'تهران، صادقیه'),
@@ -139,6 +147,7 @@ class Command(BaseCommand):
                 role=User.Role.MEMBER,
                 phone=phone,
                 password='member123',
+                organization=org,
             )
             member, _ = Member.objects.get_or_create(user=user)
             member.date_of_birth = birth_date
@@ -148,7 +157,7 @@ class Command(BaseCommand):
             members.append(member)
         return members
 
-    def _create_membership_plans(self):
+    def _create_membership_plans(self, org):
         plan_data = [
             ('پلن یک‌ماهه', 30, Decimal('1590000'), 'دسترسی کامل به سالن و کلاس‌های گروهی برای یک ماه.'),
             ('پلن سه‌ماهه', 90, Decimal('4290000'), 'انتخاب اقتصادی برای سه ماه تمرین مستمر.'),
@@ -158,6 +167,7 @@ class Command(BaseCommand):
         plans = []
         for name, duration_days, price, description in plan_data:
             plan, _ = MembershipPlan.objects.get_or_create(
+                organization=org,
                 name=name,
                 defaults={
                     'duration_days': duration_days,
@@ -239,7 +249,7 @@ class Command(BaseCommand):
                 assignment.status = TrainerMemberAssignment.Status.ACTIVE
                 assignment.save(update_fields=['status'])
 
-    def _create_classes_and_sessions(self, trainers):
+    def _create_classes_and_sessions(self, org, trainers):
         class_data = [
             ('یوگا صبحگاهی', 'یوگا', 'کلاس آرام و انرژی‌بخش برای شروع روز با تمرکز بر تنفس و انعطاف.'),
             ('پیلاتس', 'اصلاحی', 'تقویت عضلات مرکزی و بهبود وضعیت بدن.'),
@@ -250,6 +260,7 @@ class Command(BaseCommand):
         gym_classes = {}
         for name, category, description in class_data:
             gym_class, _ = GymClass.objects.get_or_create(
+                organization=org,
                 name=name,
                 defaults={'category': category, 'description': description},
             )
@@ -371,10 +382,17 @@ class Command(BaseCommand):
                     'end_date': today + timedelta(days=42),
                 },
             )
+            day, _ = WorkoutDay.objects.get_or_create(
+                workout_plan=workout_plan, day_number=1, defaults={'label': 'روز ۱'}
+            )
             for exercise_name, sets, reps, notes in exercises:
+                exercise, _ = Exercise.objects.get_or_create(
+                    organization=None, name=exercise_name,
+                    defaults={'muscle_group': Exercise.MuscleGroup.FULL_BODY},
+                )
                 WorkoutPlanItem.objects.get_or_create(
-                    workout_plan=workout_plan,
-                    exercise_name=exercise_name,
+                    day=day,
+                    exercise=exercise,
                     defaults={'sets': sets, 'reps': reps, 'notes': notes},
                 )
 

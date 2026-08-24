@@ -102,6 +102,36 @@ class MyQRCodeView(APIView):
         return HttpResponse(buffer.getvalue(), content_type='image/png')
 
 
+class MyFaceEnrollView(APIView):
+    """Member saves/updates the face descriptor used for face-recognition
+    check-in (see bookings.services.match_face). Only the 128-number
+    embedding is stored — never a photo."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.is_member:
+            raise PermissionDenied('Only members can enroll a face for check-in.')
+        descriptor = request.data.get('descriptor')
+        if not isinstance(descriptor, list) or len(descriptor) != 128:
+            return Response(
+                {'descriptor': 'Expected a 128-number face descriptor.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        member = request.user.member_profile
+        member.face_descriptor = descriptor
+        member.save(update_fields=['face_descriptor'])
+        return Response({'detail': 'Face enrolled successfully.'})
+
+    def delete(self, request):
+        if not request.user.is_member:
+            raise PermissionDenied('Only members can manage their own face enrollment.')
+        member = request.user.member_profile
+        member.face_descriptor = None
+        member.save(update_fields=['face_descriptor'])
+        return Response({'detail': 'Face enrollment removed.'})
+
+
 class ChangePasswordView(APIView):
     """Change the current user's password."""
 
@@ -126,7 +156,10 @@ class AdminUserListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        qs = User.objects.filter(role__in=[User.Role.MEMBER, User.Role.TRAINER]).order_by('full_name')
+        qs = User.objects.filter(
+            role__in=[User.Role.MEMBER, User.Role.TRAINER],
+            organization=self.request.user.organization,
+        ).order_by('full_name')
         role = self.request.query_params.get('role')
         if role:
             qs = qs.filter(role=role)
@@ -136,7 +169,11 @@ class AdminUserListCreateView(generics.ListCreateAPIView):
         return RegisterSerializer if self.request.method == 'POST' else UserSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        # Admin-created accounts always join the creating admin's own gym —
+        # never a client-supplied org id.
+        data = request.data.copy()
+        data['organization'] = request.user.organization_id
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
@@ -145,8 +182,13 @@ class AdminUserListCreateView(generics.ListCreateAPIView):
 class AdminUserDetailView(generics.RetrieveUpdateAPIView):
     """Admin edits or activates/deactivates a single Trainer/Member account."""
 
-    queryset = User.objects.filter(role__in=[User.Role.MEMBER, User.Role.TRAINER])
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return User.objects.filter(
+            role__in=[User.Role.MEMBER, User.Role.TRAINER],
+            organization=self.request.user.organization,
+        )
 
     def get_serializer_class(self):
         return AdminUserUpdateSerializer if self.request.method in ('PUT', 'PATCH') else UserSerializer
@@ -155,17 +197,25 @@ class AdminUserDetailView(generics.RetrieveUpdateAPIView):
 class TrainerListView(generics.ListAPIView):
     """Minimal trainer roster — admin picker when scheduling a class session."""
 
-    queryset = Trainer.objects.select_related('user').order_by('user__full_name')
     serializer_class = TrainerListSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return Trainer.objects.filter(
+            user__organization=self.request.user.organization
+        ).select_related('user').order_by('user__full_name')
 
 
 class MemberListView(generics.ListAPIView):
     """Minimal member roster — admin picker when assigning a trainer."""
 
-    queryset = Member.objects.select_related('user').order_by('user__full_name')
     serializer_class = MemberListSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return Member.objects.filter(
+            user__organization=self.request.user.organization
+        ).select_related('user').order_by('user__full_name')
 
 
 class TrainerMemberAssignmentView(generics.ListCreateAPIView):
@@ -183,7 +233,7 @@ class TrainerMemberAssignmentView(generics.ListCreateAPIView):
         user = self.request.user
         qs = TrainerMemberAssignment.objects.select_related('member__user', 'trainer__user')
         if user.is_admin_role:
-            return qs
+            return qs.filter(trainer__user__organization=user.organization)
         if user.is_trainer:
             return qs.filter(trainer__user=user)
         return qs.filter(member__user=user)
@@ -201,4 +251,6 @@ class AssignmentDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        return TrainerMemberAssignment.objects.all()
+        return TrainerMemberAssignment.objects.filter(
+            trainer__user__organization=self.request.user.organization
+        )

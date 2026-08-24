@@ -7,4 +7,6 @@ from . import views
 urlpatterns = [
     path('progress/', views.BodyProgressListCreateView.as_view(), name='progress-list'),
     path('progress/<int:pk>/', views.BodyProgressDetailView.as_view(), name='progress-detail'),
+    path('progress/leaderboard/', views.LeaderboardView.as_view(), name='leaderboard'),
+    path('progress/me/points/', views.MyPointsView.as_view(), name='my-points'),
 ]

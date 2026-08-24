@@ -14,7 +14,10 @@ from django.utils import timezone
 class MembershipPlan(models.Model):
     """A subscription package offered by the gym (SRS 6.5)."""
 
-    name = models.CharField(max_length=100, unique=True)
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE, related_name='membership_plans',
+    )
+    name = models.CharField(max_length=100)
     duration_days = models.PositiveIntegerField(help_text='Length of the plan in days.')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     description = models.TextField(blank=True)
@@ -23,6 +26,7 @@ class MembershipPlan(models.Model):
 
     class Meta:
         ordering = ['price']
+        unique_together = ('organization', 'name')
 
     def __str__(self):
         return f'{self.name} ({self.duration_days}d)'

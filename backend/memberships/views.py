@@ -39,18 +39,23 @@ class MembershipPlanListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = MembershipPlan.objects.all()
+        qs = MembershipPlan.objects.filter(organization=self.request.user.organization)
         if self.request.user.is_member:
             qs = qs.filter(is_active=True)
         return qs
+
+    def perform_create(self, serializer):
+        serializer.save(organization=self.request.user.organization)
 
 
 class MembershipPlanDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Retrieve/update/delete a plan — admin only."""
 
-    queryset = MembershipPlan.objects.all()
     serializer_class = MembershipPlanSerializer
     permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        return MembershipPlan.objects.filter(organization=self.request.user.organization)
 
 
 class SubscribeView(APIView):
@@ -126,7 +131,9 @@ class AdminSubscriptionListView(generics.ListAPIView):
 
     def get_queryset(self):
         expire_due_subscriptions()
-        return Subscription.objects.select_related('member__user', 'plan')
+        return Subscription.objects.select_related('member__user', 'plan').filter(
+            member__user__organization=self.request.user.organization
+        )
 
 
 class AdminPaymentListView(generics.ListAPIView):
@@ -134,6 +141,10 @@ class AdminPaymentListView(generics.ListAPIView):
 
     serializer_class = PaymentSerializer
     permission_classes = [IsAdmin]
-    queryset = Payment.objects.select_related('subscription__member__user')
     filterset_fields = ['status']
     search_fields = ['transaction_ref', 'subscription__member__user__email']
+
+    def get_queryset(self):
+        return Payment.objects.select_related('subscription__member__user').filter(
+            subscription__member__user__organization=self.request.user.organization
+        )

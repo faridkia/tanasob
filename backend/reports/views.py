@@ -5,13 +5,18 @@ These are read-only aggregation views; they have no model of their own and
 query across the other apps.
 """
 
+from datetime import timedelta
+
 from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
+from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from common.permissions import IsAdmin
 
+from accounts.models import User
 from bookings.models import Attendance, Booking
 from classes.models import ClassSession, GymClass
 from memberships.models import Payment, Subscription
@@ -25,10 +30,11 @@ class SubscriptionReportView(APIView):
 
     def get(self, request):
         expire_due_subscriptions()
-        total = Subscription.objects.count()
-        active = Subscription.objects.filter(status=Subscription.Status.ACTIVE).count()
-        expired = Subscription.objects.filter(status=Subscription.Status.EXPIRED).count()
-        cancelled = Subscription.objects.filter(status=Subscription.Status.CANCELLED).count()
+        base = Subscription.objects.filter(member__user__organization=request.user.organization)
+        total = base.count()
+        active = base.filter(status=Subscription.Status.ACTIVE).count()
+        expired = base.filter(status=Subscription.Status.EXPIRED).count()
+        cancelled = base.filter(status=Subscription.Status.CANCELLED).count()
         return Response({
             'total': total,
             'active': active,
@@ -43,7 +49,10 @@ class RevenueReportView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        qs = Payment.objects.filter(status=Payment.Status.SUCCESS)
+        qs = Payment.objects.filter(
+            status=Payment.Status.SUCCESS,
+            subscription__member__user__organization=request.user.organization,
+        )
         date_from = request.query_params.get('from')
         date_to = request.query_params.get('to')
         if date_from:
@@ -65,7 +74,9 @@ class AttendanceReportView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        sessions = ClassSession.objects.annotate(
+        sessions = ClassSession.objects.filter(
+            gym_class__organization=request.user.organization
+        ).annotate(
             attendance_count=Count('attendances'),
             booking_count=Count('bookings', distinct=True),
         ).order_by('-attendance_count')[:50]
@@ -90,7 +101,8 @@ class PopularReportView(APIView):
 
     def get(self, request):
         popular_classes = (
-            GymClass.objects.annotate(
+            GymClass.objects.filter(organization=request.user.organization)
+            .annotate(
                 total_bookings=Count('sessions__bookings', distinct=True),
             )
             .order_by('-total_bookings')[:10]
@@ -98,7 +110,8 @@ class PopularReportView(APIView):
         from accounts.models import Trainer
 
         popular_trainers = (
-            Trainer.objects.annotate(
+            Trainer.objects.filter(user__organization=request.user.organization)
+            .annotate(
                 total_bookings=Count('sessions__bookings', distinct=True),
             )
             .order_by('-total_bookings')[:10]
@@ -116,4 +129,63 @@ class PopularReportView(APIView):
                 }
                 for t in popular_trainers
             ],
+        })
+
+
+class AnalyticsTrendView(APIView):
+    """Admin analytics dashboard: revenue and member-growth trend over the
+    last 6 months, plus a per-weekday attendance breakdown — for the richer
+    admin dashboard charts."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        org = request.user.organization
+        today = timezone.localdate()
+        six_months_ago = today.replace(day=1) - timedelta(days=180)
+
+        revenue_rows = (
+            Payment.objects.filter(
+                status=Payment.Status.SUCCESS,
+                paid_at__date__gte=six_months_ago,
+                subscription__member__user__organization=org,
+            )
+            .annotate(month=TruncMonth('paid_at'))
+            .values('month')
+            .annotate(total=Sum('amount'), count=Count('id'))
+            .order_by('month')
+        )
+        revenue_trend = [
+            {'month': row['month'].strftime('%Y-%m'), 'total': row['total'] or 0, 'count': row['count']}
+            for row in revenue_rows
+        ]
+
+        growth_rows = (
+            User.objects.filter(
+                organization=org,
+                role__in=[User.Role.MEMBER, User.Role.TRAINER],
+                created_at__date__gte=six_months_ago,
+            )
+            .annotate(month=TruncMonth('created_at'))
+            .values('month')
+            .annotate(count=Count('id'))
+            .order_by('month')
+        )
+        member_growth = [
+            {'month': row['month'].strftime('%Y-%m'), 'count': row['count']}
+            for row in growth_rows
+        ]
+
+        weekday_labels = ['دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه', 'یکشنبه']
+        attendance_by_weekday = [0] * 7
+        for record in Attendance.objects.filter(member__user__organization=org).values_list('check_in_time', flat=True):
+            attendance_by_weekday[record.weekday()] += 1
+        weekday_breakdown = [
+            {'label': label, 'count': count} for label, count in zip(weekday_labels, attendance_by_weekday)
+        ]
+
+        return Response({
+            'revenue_trend': revenue_trend,
+            'member_growth': member_growth,
+            'weekday_breakdown': weekday_breakdown,
         })

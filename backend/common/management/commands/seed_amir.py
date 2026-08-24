@@ -20,7 +20,7 @@ from classes.models import ClassSession
 from memberships.models import MembershipPlan, Payment, Subscription
 from messaging.models import Message
 from notifications.models import Notification
-from plans.models import DietPlan, DietPlanItem, WorkoutPlan, WorkoutPlanItem
+from plans.models import DietPlan, DietPlanItem, Exercise, WorkoutDay, WorkoutPlan, WorkoutPlanItem
 from progress.models import BodyProgress
 
 User = get_user_model()
@@ -54,7 +54,7 @@ class Command(BaseCommand):
             raise CommandError('اول «python manage.py seed» را اجرا کن تا مربی/پلن/جلسه نمونه وجود داشته باشد.')
 
         with transaction.atomic():
-            member = self._create_member()
+            member = self._create_member(trainer.user.organization)
             self._create_assignment(member, trainer)
             self._create_subscription(member, plan)
             self._create_bookings(member, sessions)
@@ -64,13 +64,17 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(f'\n✅ داده‌های امیر آماده شد: {EMAIL} / {PASSWORD}'))
 
-    def _create_member(self):
+    def _create_member(self, organization):
         user, _ = User.objects.get_or_create(
             email=EMAIL,
-            defaults={'full_name': 'امیر حسینی', 'role': User.Role.MEMBER, 'phone': '۰۹۱۲۹۹۹۹۹۹۹'},
+            defaults={
+                'full_name': 'امیر حسینی', 'role': User.Role.MEMBER, 'phone': '۰۹۱۲۹۹۹۹۹۹۹',
+                'organization': organization,
+            },
         )
         user.full_name = 'امیر حسینی'
         user.role = User.Role.MEMBER
+        user.organization = organization
         user.is_active = True
         user.set_password(PASSWORD)
         user.save()
@@ -140,14 +144,21 @@ class Command(BaseCommand):
             member=member, trainer=trainer, title='برنامه کامل امیر',
             defaults={'start_date': today - timedelta(days=7), 'end_date': today + timedelta(days=56)},
         )
+        day, _ = WorkoutDay.objects.get_or_create(
+            workout_plan=workout_plan, day_number=1, defaults={'label': 'روز ۱'}
+        )
         for exercise_name, sets, reps, notes in [
             ('اسکوات هالتر', 4, 8, 'استراحت ۹۰ ثانیه بین ست‌ها.'),
             ('ددلیفت', 3, 6, 'فرم صحیح مهم‌تر از وزنه است.'),
             ('پرس سرشانه', 4, 10, 'کنترل کامل در فاز پایین‌رونده.'),
             ('لانج دمبل', 3, 12, 'هر پا جداگانه شمرده شود.'),
         ]:
+            exercise, _ = Exercise.objects.get_or_create(
+                organization=None, name=exercise_name,
+                defaults={'muscle_group': Exercise.MuscleGroup.FULL_BODY},
+            )
             WorkoutPlanItem.objects.get_or_create(
-                workout_plan=workout_plan, exercise_name=exercise_name,
+                day=day, exercise=exercise,
                 defaults={'sets': sets, 'reps': reps, 'notes': notes},
             )
 
