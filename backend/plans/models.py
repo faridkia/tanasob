@@ -10,7 +10,6 @@ from django.db import models
 
 
 class WorkoutPlan(models.Model):
-    """A training plan created by a Trainer for a Member (SRS 6.12)."""
 
     member = models.ForeignKey(
         'accounts.Member', on_delete=models.CASCADE, related_name='workout_plans'

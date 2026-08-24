@@ -1,12 +1,3 @@
-"""Service layer for the assistant app.
-
-Calls an OpenAI-compatible chat-completions gateway (configured entirely
-through env vars — see `tanasob/settings.py`) and builds a per-role system
-prompt that includes a live snapshot of the user's own data, so the
-assistant answers questions like "چند جلسه رزرو دارم؟" from real numbers
-instead of guessing.
-"""
-
 from django.conf import settings
 from django.utils import timezone
 

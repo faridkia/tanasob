@@ -1,10 +1,3 @@
-"""
-Views for the accounts app.
-
-Authentication endpoints (register, login, me, change password) and the
-trainer-member assignment management endpoint (FR-TRN-2, FR-TRN-3).
-"""
-
 import io
 
 import qrcode

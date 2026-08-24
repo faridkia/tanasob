@@ -1,10 +1,3 @@
-"""Model for the assistant app: chat history with the AI assistant.
-
-Each user (member, trainer, or admin) has one running conversation; messages
-are stored so the assistant can see prior turns and so the chat UI can
-reload history after a page refresh.
-"""
-
 from django.conf import settings
 from django.db import models
 

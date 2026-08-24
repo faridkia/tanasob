@@ -1,11 +1,3 @@
-"""
-Signals for the accounts app.
-
-Whenever a User is created, the matching specialized profile (Member or
-Trainer) is created automatically based on the role. This keeps the 1:1
-relationship between User and its profile consistent (SRS 6.1).
-"""
-
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 

@@ -25,8 +25,7 @@ class GymClass(models.Model):
 
 
 class ClassSession(models.Model):
-    """A specific scheduled occurrence of a GymClass (SRS 6.9)."""
-
+    
     gym_class = models.ForeignKey(
         GymClass, on_delete=models.CASCADE, related_name='sessions'
     )
@@ -49,7 +48,6 @@ class ClassSession(models.Model):
         if self.start_time and self.end_time and self.start_time >= self.end_time:
             raise ValidationError('start_time must be earlier than end_time.')
 
-        # FR-CLS-4: prevent the same trainer from having overlapping sessions.
         if self.trainer_id and self.session_date and self.start_time and self.end_time:
             overlapping = ClassSession.objects.filter(
                 trainer_id=self.trainer_id,

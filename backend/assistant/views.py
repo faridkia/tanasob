@@ -11,10 +11,9 @@ from .services import AssistantError, ask_assistant
 
 
 class ChatHistoryView(generics.ListAPIView):
-    """GET the current user's chat history with the assistant."""
 
     serializer_class = ChatMessageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  
     pagination_class = None
 
     def get_queryset(self):
@@ -22,7 +21,6 @@ class ChatHistoryView(generics.ListAPIView):
 
 
 class SendMessageView(APIView):
-    """POST a message and get the assistant's reply."""
 
     permission_classes = [IsAuthenticated]
 
