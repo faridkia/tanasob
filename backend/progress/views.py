@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 
 from accounts.models import TrainerMemberAssignment
 
-from .gamification import leaderboard, points_for_member
+from .gamification import goals_for_member, leaderboard, points_for_member
 from .models import BodyProgress
 from .serializers import BodyProgressSerializer
 
@@ -75,3 +75,14 @@ class MyPointsView(APIView):
         if not request.user.is_member:
             return Response({'detail': 'Only members have a points profile.'}, status=400)
         return Response(points_for_member(request.user.member_profile))
+
+
+class MyGoalsView(APIView):
+    """Weekly/monthly attendance goals + today's calorie target."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_member:
+            return Response({'detail': 'Only members have goals.'}, status=400)
+        return Response(goals_for_member(request.user.member_profile))

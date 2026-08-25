@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, ArrowLeft, Bell, Bot, Building2, CalendarDays, Camera, Check, ChevronLeft, CircleUserRound,
-  ClipboardList, CreditCard, Dumbbell, Edit2, HeartPulse, ImagePlus, Link2, LayoutDashboard, LogOut, MessageCircle,
-  Moon, Play, Plus, QrCode, Salad, ScanLine, Send, Settings, ShieldCheck, Sparkles, Sun, Trash2, Trophy,
+  Activity, Award, ArrowLeft, Bell, Bot, Building2, CalendarDays, CalendarRange, Camera, Check, CheckCircle2,
+  ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, CreditCard, Dumbbell, Edit2, Flame, HeartPulse,
+  ImagePlus, Link2, LayoutDashboard, LogOut, MapPin, MessageCircle, Moon, Play, Plus, QrCode, RotateCcw, Salad,
+  ScanLine, Search, Send, Settings, ShieldCheck, SkipForward, Sparkles, Sun, Target, Timer, Trash2, Trophy,
   UserCheck, UserPlus, UserX, Users, Video, X,
 } from 'lucide-react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import jsQR from 'jsqr'
 import { AnimatePresence, motion } from 'framer-motion'
+import Model from 'react-body-highlighter'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -20,6 +22,107 @@ import landingImage from './assets/landingimage.png'
 const roleLabel = { MEMBER: 'عضو', TRAINER: 'مربی', ADMIN: 'مدیر' }
 const formatDate = (value) => value && new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date(value))
 const formatPrice = (value) => `${new Intl.NumberFormat('fa-IR').format(value)} تومان`
+const toPersianDigits = (n) => String(n).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d])
+const formatDuration = (totalSeconds) => {
+  const m = Math.floor(totalSeconds / 60)
+  const s = totalSeconds % 60
+  return toPersianDigits(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
+}
+
+// Standard MET-based calorie estimate: kcal = MET * 3.5 * weightKg / 200 * minutes.
+const MET_VALUES = { WORKOUT: 6, WALK: 3.5, RUN: 8 }
+const estimateCalories = (activityType, weightKg, seconds) => {
+  const met = MET_VALUES[activityType] || 5
+  return Math.max(1, Math.round((met * 3.5 * weightKg / 200) * (seconds / 60)))
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/** The member's most recently logged body weight (falls back to 70kg for
+ * anyone who hasn't logged one yet) — used to estimate calories burned. */
+function useMemberWeight() {
+  const [weight, setWeight] = useState(70)
+  useEffect(() => {
+    api.get('/progress/').then(({ data }) => {
+      const items = getItems(data)
+      if (items[0]?.weight_kg) setWeight(Number(items[0].weight_kg))
+    }).catch(() => {})
+  }, [])
+  return weight
+}
+
+// Jalali <-> Gregorian conversion (the standard jalaali algorithm) — needed
+// only to build a real Jalali calendar grid (which day-of-month falls under
+// which weekday cell). Every date *label* elsewhere in the app already goes
+// through Intl.DateTimeFormat('fa-IR', ...), which renders the same
+// calendar system natively; this is purely for grid math.
+function jalaliToGregorian(jy, jm, jd) {
+  jy += 1595
+  let days = -355668 + (365 * jy) + (Math.floor(jy / 33) * 8) + Math.floor(((jy % 33) + 3) / 4) + jd
+    + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186)
+  let gy = 400 * Math.floor(days / 146097)
+  days %= 146097
+  if (days > 36524) {
+    gy += 100 * Math.floor(--days / 36524)
+    days %= 36524
+    if (days >= 365) days++
+  }
+  gy += 4 * Math.floor(days / 1461)
+  days %= 1461
+  if (days > 365) {
+    gy += Math.floor((days - 1) / 365)
+    days = (days - 1) % 365
+  }
+  let gd = days + 1
+  const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0)
+  const monthLens = [0, 31, isLeap(gy) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  let gm
+  for (gm = 1; gm <= 12; gm++) {
+    if (gd <= monthLens[gm]) break
+    gd -= monthLens[gm]
+  }
+  return [gy, gm, gd]
+}
+
+function gregorianToJalali(gy, gm, gd) {
+  const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+  const gy2 = (gm > 2) ? (gy + 1) : gy
+  let days = 355666 + (365 * gy) + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100)
+    + Math.floor((gy2 + 399) / 400) + gd + g_d_m[gm - 1]
+  let jy = -1595 + (33 * Math.floor(days / 12053))
+  days %= 12053
+  jy += 4 * Math.floor(days / 1461)
+  days %= 1461
+  if (days > 365) {
+    jy += Math.floor((days - 1) / 365)
+    days = (days - 1) % 365
+  }
+  let jm, jd
+  if (days < 186) {
+    jm = 1 + Math.floor(days / 31)
+    jd = 1 + (days % 31)
+  } else {
+    jm = 7 + Math.floor((days - 186) / 30)
+    jd = 1 + ((days - 186) % 30)
+  }
+  return [jy, jm, jd]
+}
+
+const isoDate = (gy, gm, gd) => `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`
+const WEEKDAY_LABELS_SAT_FIRST = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج']
+
+function jalaliMonthLength(jy, jm) {
+  const [gy1, gm1, gd1] = jalaliToGregorian(jy, jm, 1)
+  const [njy, njm] = jm === 12 ? [jy + 1, 1] : [jy, jm + 1]
+  const [gy2, gm2, gd2] = jalaliToGregorian(njy, njm, 1)
+  return Math.round((new Date(gy2, gm2 - 1, gd2) - new Date(gy1, gm1 - 1, gd1)) / 86400000)
+}
 // The AI occasionally answers with light Markdown despite being told not
 // to (headings, bold, table pipes) — bubbles render as plain text, so strip
 // the syntax rather than showing literal #/**/| characters.
@@ -212,7 +315,10 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
     ['/classes', 'کلاس‌ها', CalendarDays],
     ...(member ? [['/membership', 'اشتراک من', CreditCard], ['/card', 'کارت عضویت', QrCode], ['/progress', 'پیشرفت بدن', Activity]] : []),
     ...(!admin ? [['/plans', trainer ? 'برنامه‌سازی' : 'برنامه‌های من', ClipboardList], ['/messages', 'گفت‌وگوها', MessageCircle]] : []),
-    ['/leaderboard', 'جدول امتیازات', Trophy],
+    ['/events', 'رویدادها', CalendarRange],
+    ['/competitions', 'مسابقات', Trophy],
+    ['/leaderboard', 'جدول امتیازات', Award],
+    ...(trainer || admin ? [['/exercises', 'کتابخانه حرکات', Dumbbell]] : []),
     ...(trainer ? [['/trainer', 'پنل مربی', Users]] : []),
     ...(admin ? [['/admin', 'مدیریت باشگاه', ShieldCheck]] : []),
     ['/notifications', 'اعلان‌ها', Bell],
@@ -239,6 +345,9 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
             <Route path="/messages" element={!admin ? <Messages user={user} /> : <Navigate to="/" />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/events" element={<EventsPage user={user} />} />
+            <Route path="/competitions" element={<Competitions user={user} />} />
+            <Route path="/exercises" element={(trainer || admin) ? <ExerciseLibrary /> : <Navigate to="/" />} />
             <Route path="/trainer" element={trainer ? <TrainerPanel /> : <Navigate to="/" />} />
             <Route path="/admin" element={admin ? <AdminPanel /> : <Navigate to="/" />} />
             <Route path="/profile" element={<Profile user={user} setUser={setUser} />} />
@@ -321,17 +430,97 @@ function AssistantWidget() {
 function Dashboard({ user }) {
   const [data, setData] = useState({ sessions: [], plans: [], notices: [] })
   const [points, setPoints] = useState(null)
+  const [goals, setGoals] = useState(null)
+  const [calorieSummary, setCalorieSummary] = useState(null)
+  const [events, setEvents] = useState([])
   useEffect(() => {
     Promise.all([api.get('/sessions/'), api.get('/notifications/'), ...(user.role !== 'ADMIN' ? [api.get('/workout-plans/')] : [])]).then((responses) => setData({
       sessions: getItems(responses[0].data).slice(0, 4), notices: getItems(responses[1].data).slice(0, 3), plans: responses[2] ? getItems(responses[2].data) : [],
     })).catch(() => {})
-    if (user.role === 'MEMBER') api.get('/progress/me/points/').then(({ data }) => setPoints(data)).catch(() => {})
+    if (user.role === 'MEMBER') {
+      api.get('/progress/me/points/').then(({ data }) => setPoints(data)).catch(() => {})
+      api.get('/progress/me/goals/').then(({ data }) => setGoals(data)).catch(() => {})
+      api.get('/activities/summary/').then(({ data }) => setCalorieSummary(data)).catch(() => {})
+    }
+    api.get('/events/').then(({ data }) => setEvents(getItems(data).filter((e) => e.days_remaining >= 0).slice(0, 5))).catch(() => {})
   }, [user.role])
-  const metrics = user.role === 'MEMBER' ? [['کلاس‌های پیش رو', data.sessions.length, CalendarDays], ['برنامه‌های فعال', data.plans.length, ClipboardList]] : user.role === 'TRAINER' ? [['جلسات این هفته', data.sessions.length, CalendarDays], ['برنامه‌های فعال', data.plans.length, ClipboardList], ['تمرکز امروز', '۴ جلسه', Dumbbell]] : [['کلاس‌های فعال', data.sessions.length, CalendarDays], ['اعلان‌های تازه', data.notices.length, Bell], ['وضعیت سیستم', 'پایدار', ShieldCheck]]
-  return <section className="page-stack"><motion.section className="hero-card " initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .4 }}><div><p className="eyebrow">نمای کلی</p><h2>{user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه'}</h2><p>جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></motion.section>
+  const metrics = user.role === 'MEMBER' ? [['کلاس‌های پیش رو', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple']] : user.role === 'TRAINER' ? [['جلسات این هفته', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple'], ['تمرکز امروز', '۴ جلسه', Dumbbell, 'orange']] : [['کلاس‌های فعال', data.sessions.length, CalendarDays, 'blue'], ['اعلان‌های تازه', data.notices.length, Bell, 'pink'], ['وضعیت سیستم', 'پایدار', ShieldCheck, 'green']]
+  return <section className="page-stack">
+    {events.length ? <EventHeroSlider events={events} /> : (
+      <motion.section className="hero-card " initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .4 }}><div><p className="eyebrow">نمای کلی</p><h2>{user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه'}</h2><p>جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></motion.section>
+    )}
+    <section className="metric-grid">{metrics.map(([label, value, Icon, color], i) => <motion.article className={`metric-card metric-card--${color}`} key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .06 }}><span className="icon-chip on-tile"><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></motion.article>)}</section>
     {points && <PointsCard points={points} />}
-    <section className="metric-grid">{metrics.map(([label, value, Icon], i) => <motion.article className="metric-card " key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .06 }}><span><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></motion.article>)}</section>
+    {goals && <GoalsCard goals={goals} />}
+    {calorieSummary && <CaloriesBurnedCard summary={calorieSummary} />}
     <section className="content-grid"><Card title="جلسات نزدیک" action="/classes">{data.sessions.length ? data.sessions.map((session) => <div className="list-row" key={session.id}><div className="date-chip"><b>{formatDate(session.session_date)}</b></div><div><strong>{session.gym_class_name}</strong><small>{session.trainer_name} · {session.start_time?.slice(0, 5)}</small></div>{user.role !== 'MEMBER' && <span className="capacity">{session.remaining_capacity} جای خالی</span>}</div>) : <Empty text="جلسه‌ای برای نمایش نیست." />}</Card><Card title="آخرین اعلان‌ها" action="/notifications">{data.notices.length ? data.notices.map((notice) => <div className="list-row" key={notice.id}><span className="notice-dot" /><div><strong>{notice.title}</strong><small>{notice.message}</small></div></div>) : <Empty text="اعلان تازه‌ای نداری." />}</Card></section></section>
+}
+
+/** Weekly/monthly attendance goals (real Attendance counts vs a sensible
+ * fixed target) plus today's calorie target pulled from the member's diet
+ * plan — three radial gauges, one row. */
+function GoalsCard({ goals }) {
+  const ring = (value, target) => {
+    const pct = target ? Math.min(100, Math.round((value / target) * 100)) : 0
+    const r = 30, c = 2 * Math.PI * r
+    return { pct, r, c, offset: c - (pct / 100) * c }
+  }
+  const weekly = ring(goals.weekly.count, goals.weekly.target)
+  const monthly = ring(goals.monthly.count, goals.monthly.target)
+
+  return <Card title="اهداف من">
+    <div className="goals-grid">
+      <div className="goal-gauge">
+        <svg viewBox="0 0 70 70">
+          <circle className="goal-gauge-track" cx="35" cy="35" r={weekly.r} />
+          <motion.circle className="goal-gauge-fill goal-gauge-fill--blue" cx="35" cy="35" r={weekly.r}
+            strokeDasharray={weekly.c} initial={{ strokeDashoffset: weekly.c }} animate={{ strokeDashoffset: weekly.offset }} transition={{ duration: .8, ease: 'easeOut' }} />
+        </svg>
+        <div className="goal-gauge-label"><strong>{goals.weekly.count}</strong><small>از {goals.weekly.target}</small></div>
+        <p><Target size={13} /> هدف هفتگی</p>
+      </div>
+      <div className="goal-gauge">
+        <svg viewBox="0 0 70 70">
+          <circle className="goal-gauge-track" cx="35" cy="35" r={monthly.r} />
+          <motion.circle className="goal-gauge-fill goal-gauge-fill--purple" cx="35" cy="35" r={monthly.r}
+            strokeDasharray={monthly.c} initial={{ strokeDashoffset: monthly.c }} animate={{ strokeDashoffset: monthly.offset }} transition={{ duration: .8, ease: 'easeOut', delay: .1 }} />
+        </svg>
+        <div className="goal-gauge-label"><strong>{goals.monthly.count}</strong><small>از {goals.monthly.target}</small></div>
+        <p><Target size={13} /> هدف ماهانه</p>
+      </div>
+      <div className="goal-calorie">
+        <span className="icon-chip on-tile"><Flame size={20} /></span>
+        <div><strong>{new Intl.NumberFormat('fa-IR').format(goals.calorie_target)}</strong><small>کالری هدف روزانه</small></div>
+      </div>
+    </div>
+  </Card>
+}
+
+/** Calories actually burned — real numbers from logged workout sessions
+ * and GPS walks/runs (activities.ActivityLog), charted over the last week.
+ * Always on the dashboard, per the brief. */
+function CaloriesBurnedCard({ summary }) {
+  const chartData = summary.chart.map((d) => ({
+    label: new Intl.DateTimeFormat('fa-IR', { weekday: 'short' }).format(new Date(d.date)),
+    calories: d.calories,
+  }))
+  return <Card title="کالری سوزانده شده" actionButton={<div className="calorie-totals"><span><Flame size={13} /> امروز: {toPersianDigits(summary.today_calories)}</span><span>این هفته: {toPersianDigits(summary.week_calories)}</span></div>}>
+    <div className="progress-chart"><ResponsiveContainer width="100%" height={160}>
+      <AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="calorieFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ea580c" stopOpacity={.4} />
+            <stop offset="100%" stopColor="#ea580c" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} />
+        <YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={34} allowDecimals={false} />
+        <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} formatter={(v) => [`${v} کالری`, '']} />
+        <Area type="monotone" dataKey="calories" stroke="#ea580c" strokeWidth={2} fill="url(#calorieFill)" dot={{ r: 3, fill: '#ea580c', strokeWidth: 0 }} />
+      </AreaChart>
+    </ResponsiveContainer></div>
+  </Card>
 }
 
 function PointsCard({ points }) {
@@ -572,6 +761,159 @@ function Classes({ user }) {
   return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <><button className="button primary" onClick={() => selfCheckIn(session.id)}>ثبت حضور</button><button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button></> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
 }
 
+const MUSCLE_GROUPS = [
+  { value: 'CHEST', label: 'سینه' },
+  { value: 'BACK', label: 'پشت' },
+  { value: 'LEGS', label: 'پا' },
+  { value: 'SHOULDERS', label: 'شانه' },
+  { value: 'ARMS', label: 'بازو' },
+  { value: 'CORE', label: 'شکم' },
+  { value: 'CARDIO', label: 'هوازی' },
+  { value: 'FULL_BODY', label: 'کل بدن' },
+]
+const muscleGroupLabel = (value) => MUSCLE_GROUPS.find((g) => g.value === value)?.label || value
+
+const COMPETITION_LEVELS = [
+  { value: 'ALL', label: 'همه سطوح' },
+  { value: 'BEGINNER', label: 'مبتدی' },
+  { value: 'INTERMEDIATE', label: 'متوسط' },
+  { value: 'ADVANCED', label: 'پیشرفته' },
+]
+const competitionLevelLabel = (value) => COMPETITION_LEVELS.find((l) => l.value === value)?.label || value
+
+function useCountdown(targetDate) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const diff = Math.max(0, new Date(`${targetDate}T00:00:00`).getTime() - now)
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+    done: diff <= 0,
+  }
+}
+
+/** "Starts in" countdown blocks — the same treatment for both events and
+ * competitions, since they're both "something happening on a future date." */
+function Countdown({ targetDate, label = 'شروع تا' }) {
+  const { days, hours, minutes, seconds, done } = useCountdown(targetDate)
+  if (done) return <p className="countdown-live"><Sparkles size={14} /> رویداد شروع شده است</p>
+  return <div className="countdown">
+    {label && <p className="countdown-label">{label}</p>}
+    <div className="countdown-blocks">
+      {[[days, 'روز'], [hours, 'ساعت'], [minutes, 'دقیقه'], [seconds, 'ثانیه']].map(([value, unit]) => (
+        <div className="countdown-block" key={unit}>
+          <strong>{toPersianDigits(String(value).padStart(2, '0'))}</strong>
+          <small>{unit}</small>
+        </div>
+      ))}
+    </div>
+  </div>
+}
+
+/** Which anatomical muscles each of our eight coarse groups covers. The
+ * body model speaks in real anatomy (traps, delts, quads, ...) while the
+ * rest of the app only tracks a single coarse group per exercise, so this
+ * table is the bridge in both directions. */
+const MUSCLE_GROUP_ANATOMY = {
+  CHEST: ['chest'],
+  BACK: ['trapezius', 'upper-back', 'lower-back'],
+  SHOULDERS: ['front-deltoids', 'back-deltoids'],
+  ARMS: ['biceps', 'triceps', 'forearm'],
+  CORE: ['abs', 'obliques'],
+  LEGS: ['quadriceps', 'hamstring', 'calves', 'gluteal', 'adductor', 'abductors', 'left-soleus', 'right-soleus'],
+  // Not a muscle group as such — highlight the prime movers of running,
+  // rowing and cycling so the diagram still says something true.
+  CARDIO: ['quadriceps', 'hamstring', 'calves', 'gluteal', 'abs'],
+}
+MUSCLE_GROUP_ANATOMY.FULL_BODY = [...new Set(Object.values(MUSCLE_GROUP_ANATOMY).flat())]
+
+// Reverse lookup for click-to-pick: anatomical muscle -> our coarse group.
+const ANATOMY_TO_GROUP = Object.entries(MUSCLE_GROUP_ANATOMY)
+  .filter(([group]) => group !== 'FULL_BODY' && group !== 'CARDIO')
+  .reduce((acc, [group, muscles]) => {
+    muscles.forEach((m) => { acc[m] ??= group })
+    return acc
+  }, { knees: 'LEGS' })
+
+/** Signature element: an anatomical front + back body model that lights up
+ * the muscles an exercise actually works. Read-only in plan details;
+ * click-to-pick when building an exercise (`onSelect`). */
+function MuscleDiagram({ selected, onSelect, size = 130 }) {
+  const muscles = MUSCLE_GROUP_ANATOMY[selected] || []
+  const data = muscles.length ? [{ name: muscleGroupLabel(selected), muscles }] : []
+  const handleClick = onSelect
+    ? ({ muscle }) => { const group = ANATOMY_TO_GROUP[muscle]; if (group) onSelect(group) }
+    : undefined
+
+  return (
+    <div className={`muscle-diagram ${onSelect ? 'selectable' : ''}`}>
+      {[['anterior', 'نمای جلو'], ['posterior', 'نمای پشت']].map(([type, label]) => (
+        <figure className="muscle-diagram-view" key={type}>
+          <Model
+            type={type}
+            data={data}
+            onClick={handleClick}
+            bodyColor="var(--muscle-body)"
+            highlightedColors={['var(--accent)']}
+            style={{ width: size, maxWidth: '100%' }}
+          />
+          <figcaption>{label}</figcaption>
+        </figure>
+      ))}
+    </div>
+  )
+}
+
+/** Searchable exercise picker — a "combobox" over the exercise library
+ * (name search + muscle-group chip), used anywhere a plain <select> would
+ * be too flat for browsing a growing exercise list. */
+function ExerciseCombobox({ exercises, value, onChange, placeholder = 'انتخاب حرکت' }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const boxRef = useRef(null)
+  const selected = exercises.find((e) => String(e.id) === String(value))
+
+  useEffect(() => {
+    const onDocClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  const filtered = exercises.filter((e) => e.name.includes(query))
+
+  return (
+    <div className="combobox" ref={boxRef}>
+      <div className="combobox-input" onClick={() => setOpen((v) => !v)}>
+        {selected ? <span>{selected.name}</span> : <span className="placeholder">{placeholder}</span>}
+        {selected?.video_url && <Video size={14} />}
+      </div>
+      {open && (
+        <div className="combobox-panel">
+          <div className="combobox-search">
+            <Search size={15} />
+            <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="جست‌وجوی حرکت..." />
+          </div>
+          <div className="combobox-list">
+            {filtered.length ? filtered.map((ex) => (
+              <div className="combobox-option" key={ex.id} onClick={() => { onChange(ex.id); setOpen(false); setQuery('') }}>
+                <span className="combobox-option-dot" />
+                <span>{ex.name}</span>
+                <small>{muscleGroupLabel(ex.muscle_group)}</small>
+                {ex.video_url && <Video size={13} />}
+              </div>
+            )) : <div className="combobox-option"><small>حرکتی پیدا نشد.</small></div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const PLAN_KINDS = {
   'workout-plans': {
     label: 'تمرین',
@@ -594,13 +936,391 @@ const planItemCount = (plan, config) => config.daySplit
   ? (plan.days || []).reduce((sum, day) => sum + (day.items?.length || 0), 0)
   : (plan.items?.length || 0)
 
+function ExerciseLibrary() {
+  const [exercises, setExercises] = useState([])
+  const [message, setMessage] = useState('')
+  const [search, setSearch] = useState('')
+  const [filterGroup, setFilterGroup] = useState('')
+  const [editingId, setEditingId] = useState(null) // null = not editing, 'new' = creating
+  const [form, setForm] = useState({ name: '', muscle_group: 'FULL_BODY', video_url: '', description: '' })
+
+  const load = () => api.get('/exercises/').then(({ data }) => setExercises(getItems(data))).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [])
+
+  const startCreate = () => { setEditingId('new'); setForm({ name: '', muscle_group: 'FULL_BODY', video_url: '', description: '' }) }
+  const startEdit = (ex) => { setEditingId(ex.id); setForm({ name: ex.name, muscle_group: ex.muscle_group, video_url: ex.video_url, description: ex.description }) }
+
+  const submit = async (event) => {
+    event.preventDefault()
+    try {
+      if (editingId === 'new') await api.post('/exercises/', form)
+      else await api.patch(`/exercises/${editingId}/`, form)
+      setMessage('حرکت ذخیره شد.')
+      setEditingId(null)
+      load()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  const remove = async (id) => {
+    try { await api.delete(`/exercises/${id}/`); setMessage('حرکت حذف شد.'); load() } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  const filtered = exercises.filter((ex) => (!filterGroup || ex.muscle_group === filterGroup) && ex.name.includes(search))
+
+  return <section className="page-stack">
+    <PageTitle title="کتابخانه حرکات" text="حرکات تمرینی و ویدئوهای آموزشی باشگاه را مدیریت کن." />
+    <Message text={message} />
+    <div className="content-grid">
+      <Card
+        title={editingId === 'new' ? 'حرکت جدید' : editingId ? 'ویرایش حرکت' : 'حرکت جدید'}
+        actionButton={!editingId && <button className="button primary" onClick={startCreate}><Plus size={16} /> افزودن حرکت</button>}
+      >
+        {editingId ? (
+          <form onSubmit={submit} className="form-grid compact">
+            <Field label="نام حرکت" value={form.name} onChange={(name) => setForm({ ...form, name })} required />
+            <label>گروه عضلانی
+              <select value={form.muscle_group} onChange={(e) => setForm({ ...form, muscle_group: e.target.value })}>
+                {MUSCLE_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+              </select>
+            </label>
+            <MuscleDiagram selected={form.muscle_group} onSelect={(g) => setForm({ ...form, muscle_group: g })} />
+            <Field label="لینک ویدئوی آموزشی (یوتیوب/آپارات)" value={form.video_url} onChange={(video_url) => setForm({ ...form, video_url })} />
+            <label>توضیحات و نکات ایمنی
+              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+            </label>
+            <div className="inline-form">
+              <button className="button primary">ذخیره <Check size={16} /></button>
+              <button type="button" className="button muted" onClick={() => setEditingId(null)}>انصراف</button>
+            </div>
+          </form>
+        ) : <p className="empty">برای ساخت حرکت جدید روی «افزودن حرکت» بزن.</p>}
+      </Card>
+      <Card title="لیست حرکات">
+        <div className="inline-form" style={{ marginBottom: '.6rem' }}>
+          <input placeholder="جست‌وجو..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <select value={filterGroup} onChange={(e) => setFilterGroup(e.target.value)}>
+            <option value="">همه گروه‌ها</option>
+            {MUSCLE_GROUPS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+          </select>
+        </div>
+        {filtered.length ? filtered.map((ex) => (
+          <div className="list-row" key={ex.id}>
+            <span className="icon-chip blue"><Dumbbell size={16} /></span>
+            <div><strong>{ex.name}</strong><small>{muscleGroupLabel(ex.muscle_group)}{ex.video_url && ' · دارای ویدئو'}</small></div>
+            {ex.organization && <>
+              <button className="icon-button" onClick={() => startEdit(ex)}><Edit2 size={15} /></button>
+              <button className="icon-button" onClick={() => remove(ex.id)}><Trash2 size={15} /></button>
+            </>}
+          </div>
+        )) : <Empty text="حرکتی پیدا نشد." />}
+      </Card>
+    </div>
+  </section>
+}
+
+function Competitions({ user }) {
+  const admin = user.role === 'ADMIN'
+  const [competitions, setCompetitions] = useState([])
+  const [message, setMessage] = useState('')
+  const [openId, setOpenId] = useState(null)
+  const load = () => api.get('/competitions/').then(({ data }) => setCompetitions(getItems(data))).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [])
+  const openComp = competitions.find((c) => c.id === openId) || null
+  const featured = competitions.find((c) => c.is_active && c.days_remaining > 0) || competitions[0]
+
+  return <section className="page-stack">
+    <PageTitle title="مسابقات و چالش‌ها" text="در مسابقات باشگاه شرکت کن و به چالش کشیده شو." />
+    <Message text={message} />
+    {featured && (
+      <motion.div className="competition-hero" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}>
+        <span className="competition-hero-badge"><Flame size={14} /> {featured.days_remaining} روز مانده</span>
+        <h2>{featured.title}</h2>
+        <p>{featured.description}</p>
+        <button className="button primary" style={{ alignSelf: 'flex-start', background: '#fff', color: 'var(--accent-ink)', boxShadow: 'none' }} onClick={() => setOpenId(featured.id)}>مشاهده مسابقه <ChevronLeft size={16} /></button>
+      </motion.div>
+    )}
+    {admin && <CompetitionManager onCreated={load} setMessage={setMessage} />}
+    <Card title="مسابقات فعال">
+      {competitions.length ? (
+        <div className="competition-grid">
+          {competitions.map((c, i) => (
+            <motion.div className="competition-card" key={c.id} onClick={() => setOpenId(c.id)} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
+              <div className="competition-card-image">
+                {c.image ? <img src={c.image} alt={c.title} /> : <Trophy size={28} />}
+                <span className="competition-card-days">{c.days_remaining} روز مانده</span>
+              </div>
+              <div className="competition-card-body">
+                <h4>{c.title}</h4>
+                <div className="competition-card-meta">
+                  <span className="competition-card-tag">{c.kind === 'INDIVIDUAL' ? 'فردی' : 'تیمی'}</span>
+                  <span className="competition-card-tag">{competitionLevelLabel(c.level)}</span>
+                </div>
+                <div className="competition-card-footer">
+                  <span>{c.participant_count} شرکت‌کننده</span>
+                  {c.is_joined && <span className="status active">عضو شدی</span>}
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      ) : <Empty text="مسابقه‌ای ثبت نشده است." />}
+    </Card>
+    <AnimatePresence>
+      {openComp && <CompetitionDetailModal competition={openComp} onClose={() => setOpenId(null)} onChanged={load} setMessage={setMessage} canManage={admin} isMember={user.role === 'MEMBER'} />}
+    </AnimatePresence>
+  </section>
+}
+
+function CompetitionDetailModal({ competition, onClose, onChanged, setMessage, canManage, isMember }) {
+  const [busy, setBusy] = useState(false)
+  const join = async () => {
+    setBusy(true)
+    try {
+      await api.post(`/competitions/${competition.id}/join/`)
+      setMessage('با موفقیت در مسابقه ثبت‌نام شدی!')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+  const remove = async () => {
+    try { await api.delete(`/competitions/${competition.id}/`); setMessage('مسابقه حذف شد.'); onChanged(); onClose() } catch (e) { setMessage(errorMessage(e)) }
+  }
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+    <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <div className="competition-card-image" style={{ height: 140, borderRadius: 'var(--radius)' }}>
+        {competition.image ? <img src={competition.image} alt="" /> : <Trophy size={32} />}
+      </div>
+      <h2>{competition.title}</h2>
+      <p className="plan-modal-meta">{formatDate(competition.start_date)} تا {formatDate(competition.end_date)} · {competition.days_remaining} روز مانده</p>
+      <div className="competition-card-meta">
+        <span className="competition-card-tag">{competition.kind === 'INDIVIDUAL' ? 'فردی' : 'تیمی'}</span>
+        <span className="competition-card-tag">{competitionLevelLabel(competition.level)}</span>
+        <span className="competition-card-tag">{competition.participant_count} شرکت‌کننده</span>
+      </div>
+      <p>{competition.description}</p>
+      {competition.start_date > todayIso() && <Countdown targetDate={competition.start_date} label="شروع مسابقه تا" />}
+      {competition.prizes.length > 0 && <>
+        <h4 style={{ margin: '.6rem 0 0' }}>جوایز</h4>
+        {competition.prizes.map((p) => (
+          <div className="prize-row" key={p.id}>
+            <span className={`prize-rank rank-${p.rank <= 3 ? p.rank : 'other'}`}>{p.rank}</span>
+            <span>{p.title}</span>
+          </div>
+        ))}
+      </>}
+      {isMember && (
+        competition.is_joined
+          ? <p className="form-message">تو در این مسابقه ثبت‌نام کردی. 🎉</p>
+          : <button className="button primary" onClick={join} disabled={busy}><Award size={16} /> در این مسابقه شرکت کنم</button>
+      )}
+      {canManage && <button className="button muted" onClick={remove}><Trash2 size={16} /> حذف مسابقه</button>}
+    </motion.div>
+  </motion.div>
+}
+
+function CompetitionManager({ onCreated, setMessage }) {
+  const blank = () => ({
+    title: '', description: '', kind: 'INDIVIDUAL', level: 'ALL',
+    start_date: todayIso(), end_date: todayIso(), prizes: [{ rank: 1, title: '' }],
+  })
+  const [form, setForm] = useState(blank())
+  const [busy, setBusy] = useState(false)
+
+  const updatePrize = (i, patch) => setForm((f) => ({ ...f, prizes: f.prizes.map((p, j) => j === i ? { ...p, ...patch } : p) }))
+  const addPrize = () => setForm((f) => ({ ...f, prizes: [...f.prizes, { rank: f.prizes.length + 1, title: '' }] }))
+  const removePrize = (i) => setForm((f) => ({ ...f, prizes: f.prizes.filter((_, j) => j !== i) }))
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await api.post('/competitions/', form)
+      setMessage('مسابقه جدید ساخته شد.')
+      setForm(blank())
+      onCreated()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  return <Card title="ساخت مسابقه جدید">
+    <form onSubmit={submit} className="form-grid compact">
+      <Field label="عنوان مسابقه" value={form.title} onChange={(title) => setForm({ ...form, title })} required />
+      <label>توضیحات<textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+      <label>نوع<select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}><option value="INDIVIDUAL">فردی</option><option value="TEAM">تیمی</option></select></label>
+      <label>سطح<select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>{COMPETITION_LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select></label>
+      <Field label="تاریخ شروع" type="date" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} required />
+      <Field label="تاریخ پایان" type="date" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} required />
+      <div>
+        <label>جوایز</label>
+        {form.prizes.map((p, i) => (
+          <div className="inline-form" key={i}>
+            <input type="number" min="1" value={p.rank} onChange={(e) => updatePrize(i, { rank: Number(e.target.value) })} style={{ width: 60 }} />
+            <input value={p.title} onChange={(e) => updatePrize(i, { title: e.target.value })} placeholder="عنوان جایزه" />
+            {form.prizes.length > 1 && <button type="button" className="icon-button" onClick={() => removePrize(i)}><X size={14} /></button>}
+          </div>
+        ))}
+        <button type="button" className="text-button" onClick={addPrize}><Plus size={14} /> افزودن جایزه</button>
+      </div>
+      <button className="button primary" disabled={busy}><Plus size={16} /> ساخت مسابقه</button>
+    </form>
+  </Card>
+}
+
+/** Dashboard hero slider — the first thing every role sees, showing what's
+ * coming up at the gym. Auto-advances, but dots let you jump manually. */
+function EventHeroSlider({ events }) {
+  const [index, setIndex] = useState(0)
+  const [detailEvent, setDetailEvent] = useState(null)
+  useEffect(() => {
+    if (events.length < 2) return
+    const id = setInterval(() => setIndex((i) => (i + 1) % events.length), 6000)
+    return () => clearInterval(id)
+  }, [events.length])
+  if (!events.length) return null
+  const event = events[index]
+
+  return <>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={event.id}
+        className="event-hero"
+        style={event.image ? { backgroundImage: `linear-gradient(90deg, rgba(10,13,18,.75), rgba(10,13,18,.15)), url(${event.image})` } : undefined}
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .4 }}
+      >
+        <div className="event-hero-content">
+          <span className="event-hero-badge"><CalendarRange size={13} /> {formatDate(event.event_date)}</span>
+          <h2>{event.title}</h2>
+          <p>{event.description}</p>
+          <button className="button primary" onClick={() => setDetailEvent(event)}>جزئیات رویداد <ChevronLeft size={16} /></button>
+        </div>
+      </motion.div>
+    </AnimatePresence>
+    {events.length > 1 && <div className="event-hero-dots">
+      {events.map((e, i) => <button key={e.id} className={i === index ? 'active' : ''} onClick={() => setIndex(i)} aria-label={`رویداد ${i + 1}`} />)}
+    </div>}
+    <AnimatePresence>
+      {detailEvent && <EventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />}
+    </AnimatePresence>
+  </>
+}
+
+function EventDetailModal({ event, onClose, canManage, onChanged, setMessage }) {
+  const remove = async () => {
+    try { await api.delete(`/events/${event.id}/`); setMessage?.('رویداد حذف شد.'); onChanged?.(); onClose() } catch (e) { setMessage?.(errorMessage(e)) }
+  }
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+    <motion.div className="modal-card modal-card-wide" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <div className="event-detail-layout">
+        <div className="event-detail-banner" style={event.image ? { backgroundImage: `url(${event.image})` } : undefined}>
+          {!event.image && <CalendarRange size={40} />}
+        </div>
+        <div className="event-detail-body">
+          <h2>{event.title}</h2>
+          <div className="event-detail-meta">
+            <span><CalendarDays size={14} /> {formatDate(event.event_date)}</span>
+            {event.location && <span><MapPin size={14} /> {event.location}</span>}
+          </div>
+          {event.days_remaining >= 0 && <Countdown targetDate={event.event_date} />}
+          <p className="event-detail-desc">{event.description || 'توضیحاتی برای این رویداد ثبت نشده.'}</p>
+          {canManage && <button className="button muted" onClick={remove}><Trash2 size={16} /> حذف رویداد</button>}
+        </div>
+      </div>
+    </motion.div>
+  </motion.div>
+}
+
+function EventManager({ onCreated, setMessage }) {
+  const blank = () => ({ title: '', description: '', location: '', event_date: todayIso() })
+  const [form, setForm] = useState(blank())
+  const [imageFile, setImageFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const { data: created } = await api.post('/events/', form)
+      if (imageFile) {
+        const fd = new FormData()
+        fd.append('image', imageFile)
+        await api.patch(`/events/${created.id}/`, fd)
+      }
+      setMessage('رویداد جدید ساخته شد.')
+      setForm(blank())
+      setImageFile(null)
+      onCreated()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  return <Card title="ساخت رویداد جدید">
+    <form onSubmit={submit} className="form-grid compact">
+      <Field label="عنوان رویداد" value={form.title} onChange={(title) => setForm({ ...form, title })} required />
+      <label>توضیحات<textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+      <Field label="مکان (اختیاری)" value={form.location} onChange={(location) => setForm({ ...form, location })} />
+      <Field label="تاریخ رویداد" type="date" value={form.event_date} onChange={(event_date) => setForm({ ...form, event_date })} required />
+      <label>تصویر رویداد (اختیاری)
+        <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} />
+      </label>
+      <button className="button primary" disabled={busy}><Plus size={16} /> ساخت رویداد</button>
+    </form>
+  </Card>
+}
+
+function EventsPage({ user }) {
+  const admin = user.role === 'ADMIN'
+  const [events, setEvents] = useState([])
+  const [message, setMessage] = useState('')
+  const [openId, setOpenId] = useState(null)
+  const load = () => api.get('/events/').then(({ data }) => setEvents(getItems(data))).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [])
+  const openEvent = events.find((e) => e.id === openId) || null
+
+  return <section className="page-stack">
+    <PageTitle title="رویدادهای باشگاه" text="از اتفاقات پیش روی باشگاه باخبر شو." />
+    <Message text={message} />
+    {admin && <EventManager onCreated={load} setMessage={setMessage} />}
+    <Card title="رویدادهای پیش رو">
+      {events.length ? (
+        <div className="competition-grid">
+          {events.map((e, i) => (
+            <motion.div className="competition-card" key={e.id} onClick={() => setOpenId(e.id)} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
+              <div className="competition-card-image">
+                {e.image ? <img src={e.image} alt={e.title} /> : <CalendarRange size={28} />}
+                <span className="competition-card-days">{e.days_remaining >= 0 ? `${e.days_remaining} روز مانده` : 'برگزار شد'}</span>
+              </div>
+              <div className="competition-card-body">
+                <h4>{e.title}</h4>
+                <div className="competition-card-footer">
+                  <span>{formatDate(e.event_date)}</span>
+                  {e.location && <span><MapPin size={12} /> {e.location}</span>}
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      ) : <Empty text="رویدادی ثبت نشده است." />}
+    </Card>
+    <AnimatePresence>
+      {openEvent && <EventDetailModal event={openEvent} onClose={() => setOpenId(null)} canManage={admin} onChanged={load} setMessage={setMessage} />}
+    </AnimatePresence>
+  </section>
+}
+
 function Plans({ user }) {
   const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
+  const [walking, setWalking] = useState(false)
   const trainer = user.role === 'TRAINER'
+  const member = user.role === 'MEMBER'
   const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), ...(trainer ? [api.get('/auth/assignments/')] : [])]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [user.role])
   const archive = async (type, id) => { try { await api.post(`/${type}/${id}/archive/`); setMessage('برنامه بایگانی شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />{trainer && <PlanCreator assignments={assignments} onCreated={load} onError={setMessage} />}<div className="content-grid"><PlanSection title="برنامه تمرینی" kind="workout-plans" plans={workouts} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /><PlanSection title="رژیم غذایی" kind="diet-plans" plans={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div></section>
+  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />
+    {trainer && <WorkoutPlanBuilder assignments={assignments} onCreated={load} onError={setMessage} />}
+    {trainer && <DietPlanQuickCreate assignments={assignments} onCreated={load} onError={setMessage} />}
+    {member && <button className="button primary walk-launch-btn" onClick={() => setWalking(true)}><MapPin size={16} /> شروع پیاده‌روی</button>}
+    <div className="content-grid"><PlanSection title="برنامه تمرینی" kind="workout-plans" plans={workouts} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /><PlanSection title="رژیم غذایی" kind="diet-plans" plans={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div>
+    <AnimatePresence>{walking && <WalkingTrackerModal onClose={() => setWalking(false)} />}</AnimatePresence>
+  </section>
 }
 
 function PlanSection({ title, kind, plans, canEdit, archive, onChanged, setMessage }) {
@@ -624,6 +1344,318 @@ function PlanRow({ plan, config, onOpen }) {
   </button>
 }
 
+function youtubeEmbedUrl(url) {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    let id = u.searchParams.get('v')
+    if (!id && u.hostname.includes('youtu.be')) id = u.pathname.slice(1)
+    return id ? `https://www.youtube.com/embed/${id}` : null
+  } catch { return null }
+}
+
+function WorkoutCalendar({ days, selectedDate, onSelectDate }) {
+  const dayMap = useMemo(() => new Map(days.map((d) => [d.date, d])), [days])
+  const today = new Date()
+  const [todayJy, todayJm] = gregorianToJalali(today.getFullYear(), today.getMonth() + 1, today.getDate())
+  const [viewYear, setViewYear] = useState(todayJy)
+  const [viewMonth, setViewMonth] = useState(todayJm)
+
+  const monthLen = jalaliMonthLength(viewYear, viewMonth)
+  const [firstGy, firstGm, firstGd] = jalaliToGregorian(viewYear, viewMonth, 1)
+  const firstWeekday = new Date(firstGy, firstGm - 1, firstGd).getDay()
+  const leadingBlanks = (firstWeekday + 1) % 7 // JS Sunday=0 -> Persian week starts Saturday
+
+  const cells = Array(leadingBlanks).fill(null)
+  for (let day = 1; day <= monthLen; day++) {
+    const [gy, gm, gd] = jalaliToGregorian(viewYear, viewMonth, day)
+    cells.push({ jDay: day, key: isoDate(gy, gm, gd) })
+  }
+  const monthLabel = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long' }).format(new Date(firstGy, firstGm - 1, firstGd))
+  const todayKey = isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
+
+  const prevMonth = () => viewMonth === 1 ? (setViewYear(viewYear - 1), setViewMonth(12)) : setViewMonth(viewMonth - 1)
+  const nextMonth = () => viewMonth === 12 ? (setViewYear(viewYear + 1), setViewMonth(1)) : setViewMonth(viewMonth + 1)
+
+  return <div className="workout-calendar">
+    <div className="workout-calendar-head">
+      <button className="icon-button" onClick={nextMonth}><ChevronRight size={16} /></button>
+      <strong>{monthLabel}</strong>
+      <button className="icon-button" onClick={prevMonth}><ChevronLeft size={16} /></button>
+    </div>
+    <div className="workout-calendar-grid">
+      {WEEKDAY_LABELS_SAT_FIRST.map((w) => <span className="workout-calendar-weekday" key={w}>{w}</span>)}
+      {cells.map((cell, i) => cell ? (
+        <span
+          key={cell.key}
+          className={`workout-calendar-day ${dayMap.has(cell.key) ? 'has-workout' : ''} ${cell.key === selectedDate ? 'selected' : ''} ${cell.key === todayKey ? 'today' : ''}`}
+          onClick={() => onSelectDate(cell.key)}
+        >{toPersianDigits(cell.jDay)}</span>
+      ) : <span className="workout-calendar-day empty" key={`empty-${i}`} />)}
+    </div>
+  </div>
+}
+
+function WorkoutPlanCalendarView({ days, planId }) {
+  const [selectedDate, setSelectedDate] = useState(days[0]?.date || null)
+  const [detailItem, setDetailItem] = useState(null)
+  const [session, setSession] = useState(null)
+  const selectedDay = days.find((d) => d.date === selectedDate)
+
+  return <>
+    <WorkoutCalendar days={days} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+    {selectedDay ? (
+      <div className="plan-modal-days">
+        <div className="plan-day-group">
+          <div className="plan-day-group-head">
+            <h4>{selectedDay.label || formatDate(selectedDay.date)}</h4>
+            <button className="button primary session-start-btn" onClick={() => setSession(selectedDay)}><Play size={15} /> شروع تمرین</button>
+          </div>
+          <div className="workout-exercise-grid">
+            {selectedDay.items.map((item) => (
+              <button className="workout-exercise-card" key={item.id} onClick={() => setDetailItem(item)}>
+                <div className="video-card">
+                  {item.video_url ? <div className="video-card-play"><Play size={18} /></div> : <Dumbbell size={22} className="video-card-icon" />}
+                </div>
+                <strong>{item.exercise_name}</strong>
+                <small>{muscleGroupLabel(item.muscle_group)} · {item.sets}×{item.reps}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    ) : <Empty text="روزی با تمرین در این ماه ثبت نشده." />}
+    <AnimatePresence>
+      {detailItem && <ExerciseItemDetailModal item={detailItem} onClose={() => setDetailItem(null)} />}
+      {session && <WorkoutSessionModal day={session} planId={planId} onClose={() => setSession(null)} />}
+    </AnimatePresence>
+  </>
+}
+
+/** Guided "start workout" flow — one exercise at a time, tap each set to
+ * check it off (which kicks off a 60s rest timer, skippable), then move to
+ * the next exercise. Purely a live in-session guide (no history is
+ * persisted) — the point is walking the member through *today's* session,
+ * not building a training log. */
+function WorkoutSessionModal({ day, planId, onClose }) {
+  const [index, setIndex] = useState(0)
+  const [completedSets, setCompletedSets] = useState(() => day.items.map((it) => Array(it.sets).fill(false)))
+  const [restSeconds, setRestSeconds] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
+  const [logged, setLogged] = useState(false)
+  const weightKg = useMemberWeight()
+  const item = day.items[index]
+  const finished = index >= day.items.length
+  const calories = estimateCalories('WORKOUT', weightKg, elapsed)
+
+  useEffect(() => {
+    if (restSeconds <= 0) return
+    const id = setTimeout(() => setRestSeconds((s) => s - 1), 1000)
+    return () => clearTimeout(id)
+  }, [restSeconds])
+
+  useEffect(() => {
+    if (finished) return
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [finished])
+
+  useEffect(() => {
+    if (!finished || logged || elapsed === 0) return
+    setLogged(true)
+    api.post('/activities/', {
+      activity_type: 'WORKOUT', workout_plan: planId,
+      duration_seconds: elapsed, calories_burned: calories,
+    }).catch(() => {})
+  }, [finished])
+
+  const toggleSet = (setIdx) => {
+    const wasDone = completedSets[index][setIdx]
+    setCompletedSets((prev) => prev.map((arr, i) => i === index ? arr.map((v, j) => j === setIdx ? !v : v) : arr))
+    if (!wasDone) setRestSeconds(60)
+  }
+  const goNext = () => { setRestSeconds(0); setIndex((i) => i + 1) }
+  const goPrev = () => { setRestSeconds(0); setIndex((i) => Math.max(0, i - 1)) }
+
+  if (finished) {
+    return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .95 }}>
+        <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+        <CheckCircle2 size={52} className="session-complete-icon" />
+        <h2>تمرین امروز تموم شد! 💪</h2>
+        <p>{toPersianDigits(day.items.length)} حرکت با موفقیت انجام شد. آفرین!</p>
+        <div className="session-summary">
+          <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>مدت زمان</small></div>
+          <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری سوزانده شد</small></div>
+        </div>
+        <button className="button primary" onClick={onClose}>بستن</button>
+      </motion.div>
+    </motion.div>
+  }
+
+  const doneCount = completedSets[index].filter(Boolean).length
+
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="modal-card session-modal" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <div className="session-progress">
+        <div className="session-progress-bar"><motion.div animate={{ width: `${(index / day.items.length) * 100}%` }} /></div>
+        <div className="session-progress-foot">
+          <small>حرکت {toPersianDigits(index + 1)} از {toPersianDigits(day.items.length)}</small>
+          <small className="session-live-timer"><Timer size={12} /> {formatDuration(elapsed)}</small>
+        </div>
+      </div>
+      <h2>{item.exercise_name}</h2>
+      <p className="plan-modal-meta">{muscleGroupLabel(item.muscle_group)} · هدف: {item.sets}×{item.reps} · {toPersianDigits(doneCount)}/{toPersianDigits(item.sets)} ست انجام شد</p>
+      {item.notes && <p className="session-notes">{item.notes}</p>}
+      <div className="session-sets">
+        {completedSets[index].map((done, i) => (
+          <button key={i} className={`session-set ${done ? 'done' : ''}`} onClick={() => toggleSet(i)}>
+            {done ? <CheckCircle2 size={18} /> : <span>{toPersianDigits(i + 1)}</span>}
+          </button>
+        ))}
+      </div>
+      <AnimatePresence>
+        {restSeconds > 0 && (
+          <motion.div className="session-rest" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+            <span><Timer size={15} /> استراحت: {toPersianDigits(restSeconds)} ثانیه</span>
+            <button className="text-button" onClick={() => setRestSeconds(0)}><SkipForward size={13} /> رد کردن</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <div className="session-nav">
+        <button className="button muted" onClick={goPrev} disabled={index === 0}>حرکت قبلی</button>
+        <button className="button primary" onClick={goNext}>{index === day.items.length - 1 ? 'پایان تمرین' : 'حرکت بعدی'} <ChevronLeft size={16} /></button>
+      </div>
+    </motion.div>
+  </motion.div>
+}
+
+/** GPS-tracked walk/run — accumulates distance from consecutive
+ * geolocation fixes (haversine, with a small jitter filter) while a live
+ * timer and calorie estimate run alongside it. */
+function WalkingTrackerModal({ onClose }) {
+  const [active, setActive] = useState(false)
+  const [finished, setFinished] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const [distanceKm, setDistanceKm] = useState(0)
+  const [error, setError] = useState('')
+  const weightKg = useMemberWeight()
+  const watchIdRef = useRef(null)
+  const lastPosRef = useRef(null)
+  const calories = estimateCalories('WALK', weightKg, elapsed)
+
+  useEffect(() => {
+    if (!active) return
+    const id = setInterval(() => setElapsed((s) => s + 1), 1000)
+    return () => clearInterval(id)
+  }, [active])
+
+  useEffect(() => () => { if (watchIdRef.current) navigator.geolocation?.clearWatch(watchIdRef.current) }, [])
+
+  const start = () => {
+    if (!navigator.geolocation) { setError('مرورگر شما از موقعیت مکانی پشتیبانی نمی‌کند.'); return }
+    setError('')
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        lastPosRef.current = null
+        setDistanceKm(0); setElapsed(0); setActive(true)
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords
+            if (lastPosRef.current) {
+              const d = haversineKm(lastPosRef.current.lat, lastPosRef.current.lon, latitude, longitude)
+              if (d > 0.002) { // ignore GPS jitter under ~2m so distance doesn't creep while standing still
+                setDistanceKm((prev) => prev + d)
+                lastPosRef.current = { lat: latitude, lon: longitude }
+              }
+            } else {
+              lastPosRef.current = { lat: latitude, lon: longitude }
+            }
+          },
+          () => setError('دریافت موقعیت مکانی با خطا مواجه شد.'),
+          { enableHighAccuracy: true, maximumAge: 5000 },
+        )
+      },
+      () => setError('دسترسی به موقعیت مکانی داده نشد. از تنظیمات مرورگر اجازه بده.'),
+    )
+  }
+
+  const stop = async () => {
+    if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current)
+    setActive(false)
+    try {
+      await api.post('/activities/', {
+        activity_type: 'WALK', duration_seconds: elapsed,
+        calories_burned: calories, distance_km: distanceKm.toFixed(2),
+      })
+    } catch { /* best-effort log; the session summary still shows locally */ }
+    setFinished(true)
+  }
+
+  if (finished) {
+    return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+      <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .95 }}>
+        <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+        <CheckCircle2 size={52} className="session-complete-icon" />
+        <h2>پیاده‌روی ثبت شد! 🚶</h2>
+        <div className="session-summary">
+          <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>مدت زمان</small></div>
+          <div><MapPin size={16} /><strong>{distanceKm.toFixed(2)}</strong><small>کیلومتر</small></div>
+          <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری</small></div>
+        </div>
+        <button className="button primary" onClick={onClose}>بستن</button>
+      </motion.div>
+    </motion.div>
+  }
+
+  return <motion.div className="modal-overlay" onClick={!active ? onClose : undefined} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }}>
+      {!active && <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>}
+      <span className="icon-chip on-tile walk-tracker-icon"><MapPin size={26} /></span>
+      {active ? (
+        <>
+          <h2>در حال پیاده‌روی...</h2>
+          <div className="session-summary">
+            <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>زمان</small></div>
+            <div><MapPin size={16} /><strong>{distanceKm.toFixed(2)}</strong><small>کیلومتر</small></div>
+            <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری</small></div>
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <button className="button primary" onClick={stop}>پایان پیاده‌روی</button>
+        </>
+      ) : (
+        <>
+          <h2>شروع پیاده‌روی</h2>
+          <p>مسیر و مسافت پیاده‌روی‌ات با موقعیت مکانی گوشی ثبت می‌شود.</p>
+          {error && <p className="form-error">{error}</p>}
+          <button className="button primary" onClick={start}><Play size={16} /> شروع کن</button>
+        </>
+      )}
+    </motion.div>
+  </motion.div>
+}
+
+function ExerciseItemDetailModal({ item, onClose }) {
+  const embedUrl = youtubeEmbedUrl(item.video_url)
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+    <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <h2>{item.exercise_name}</h2>
+      <p className="plan-modal-meta">{item.sets}×{item.reps} تکرار{item.notes && ` · ${item.notes}`}</p>
+      <MuscleDiagram selected={item.muscle_group} />
+      <p className="muscle-diagram-caption">این حرکت روی «{muscleGroupLabel(item.muscle_group)}» فشار وارد می‌کند.</p>
+      {item.video_url ? (
+        embedUrl ? (
+          <div className="video-embed-frame"><iframe src={embedUrl} title={item.exercise_name} allowFullScreen /></div>
+        ) : (
+          <a className="button primary" href={item.video_url} target="_blank" rel="noreferrer"><Video size={16} /> مشاهده ویدئوی آموزشی</a>
+        )
+      ) : <p className="empty">ویدئوی آموزشی برای این حرکت ثبت نشده.</p>}
+    </motion.div>
+  </motion.div>
+}
+
 function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, setMessage }) {
   const [uploading, setUploading] = useState(false)
   const [zoomed, setZoomed] = useState(false)
@@ -644,33 +1676,24 @@ function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, s
   return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
     <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
       <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-      <div className={plan.image ? 'plan-modal-image zoomable' : 'plan-modal-image'} onClick={() => plan.image && setZoomed(true)}>
-        {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="plan-modal-placeholder"><Icon size={30} /><span>عکسی ثبت نشده</span></div>}
-        {uploading && <div className="plan-modal-uploading">در حال آپلود...</div>}
-      </div>
-      {zoomed && <div className="image-lightbox" onClick={() => setZoomed(false)}>
-        <button className="icon-button modal-close" onClick={() => setZoomed(false)}><X size={17} /></button>
-        <img src={plan.image} alt={plan.title} />
-      </div>}
-      {canEdit && <>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files?.[0])} />
-        <button className="button muted plan-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
+      {!config.daySplit && <>
+        <div className={plan.image ? 'plan-modal-image zoomable' : 'plan-modal-image'} onClick={() => plan.image && setZoomed(true)}>
+          {plan.image ? <img src={plan.image} alt={plan.title} /> : <div className="plan-modal-placeholder"><Icon size={30} /><span>عکسی ثبت نشده</span></div>}
+          {uploading && <div className="plan-modal-uploading">در حال آپلود...</div>}
+        </div>
+        {zoomed && <div className="image-lightbox" onClick={() => setZoomed(false)}>
+          <button className="icon-button modal-close" onClick={() => setZoomed(false)}><X size={17} /></button>
+          <img src={plan.image} alt={plan.title} />
+        </div>}
+        {canEdit && <>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => uploadImage(e.target.files?.[0])} />
+          <button className="button muted plan-upload-button" onClick={() => fileInputRef.current?.click()} disabled={uploading}><ImagePlus size={16} /> {plan.image ? 'تغییر عکس' : 'آپلود عکس'}</button>
+        </>}
       </>}
       <h2>{plan.title}</h2>
       <p className="plan-modal-meta">{plan.trainer_name || plan.member_name} · {formatDate(plan.start_date)} تا {formatDate(plan.end_date)}</p>
       {config.daySplit ? (
-        <div className="plan-modal-days">
-          {(plan.days || []).map((day) => <div className="plan-day-group" key={day.id}>
-            <h4>{day.label || `روز ${day.day_number}`}</h4>
-            <div className="plan-modal-items">{day.items.map((item) => <div className="plan-modal-item" key={item.id}>
-              <div><strong>{item.exercise_name}</strong>{item.notes && <small>{item.notes}</small>}</div>
-              <div className="plan-item-right">
-                {item.video_url && <a className="icon-button" href={item.video_url} target="_blank" rel="noreferrer" title="ویدئو آموزشی"><Video size={16} /></a>}
-                <span className="capacity">{item.sets}×{item.reps}</span>
-              </div>
-            </div>)}</div>
-          </div>)}
-        </div>
+        <WorkoutPlanCalendarView days={plan.days || []} planId={plan.id} />
       ) : (
         <div className="plan-modal-items">{plan.items?.map((item) => <div className="plan-modal-item" key={item.id}><div>{config.itemLine(item)}</div><span className="capacity">{config.itemStat(item)}</span></div>)}</div>
       )}
@@ -747,7 +1770,7 @@ function AdminPanel() {
     api.get('/reports/trends/').then(({ data }) => setTrends(data)).catch(() => {})
     loadUsers()
   }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} /></section>
+  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} color="blue" /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} color="green" /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} color="purple" /></section>
     {trends && <AnalyticsCharts trends={trends} />}
     <div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
 }
@@ -983,13 +2006,8 @@ function FaceEnrollCard({ user, setUser }) {
   </Card>
 }
 
-function PlanCreator({ assignments, onCreated, onError }) {
-  const [kind, setKind] = useState('workout-plans'); const [member, setMember] = useState(''); const [title, setTitle] = useState(''); const [busy, setBusy] = useState(false)
-  const [exercises, setExercises] = useState([]); const [exercise, setExercise] = useState('')
-  useEffect(() => {
-    if (kind !== 'workout-plans') return
-    api.get('/exercises/').then(({ data }) => { const items = getItems(data); setExercises(items); setExercise(items[0]?.id || '') }).catch(() => {})
-  }, [kind])
+function DietPlanQuickCreate({ assignments, onCreated, onError }) {
+  const [member, setMember] = useState(''); const [title, setTitle] = useState(''); const [busy, setBusy] = useState(false)
   const submit = async (event) => {
     event.preventDefault()
     if (!member || !title) return
@@ -997,28 +2015,95 @@ function PlanCreator({ assignments, onCreated, onError }) {
     try {
       const start_date = new Date().toISOString().slice(0, 10)
       const end_date = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
-      if (kind === 'workout-plans') {
-        if (!exercise) { onError('اول یک حرکت از کتابخانه حرکات انتخاب کن.'); setBusy(false); return }
-        await api.post('/workout-plans/', { member, title, start_date, end_date, days: [{ day_number: 1, label: 'روز ۱', items: [{ exercise, sets: 3, reps: 12, notes: '' }] }] })
-      } else {
-        await api.post('/diet-plans/', { member, title, start_date, end_date, items: [{ meal_name: 'وعده اصلی', calories: 500, description: '' }] })
-      }
+      await api.post('/diet-plans/', { member, title, start_date, end_date, items: [{ meal_name: 'وعده اصلی', calories: 500, description: '' }] })
       setTitle(''); onCreated()
     } catch (e) { onError(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <Card title="ساخت سریع برنامه"><form className="inline-form" onSubmit={submit}>
-    <select value={kind} onChange={(e) => setKind(e.target.value)}><option value="workout-plans">برنامه تمرینی</option><option value="diet-plans">رژیم غذایی</option></select>
+  return <Card title="ساخت سریع رژیم غذایی"><form className="inline-form" onSubmit={submit}>
     <select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select>
-    {kind === 'workout-plans' && <select value={exercise} onChange={(e) => setExercise(e.target.value)}><option value="">انتخاب حرکت</option>{exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}</select>}
-    <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" />
+    <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان رژیم" />
     <button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button>
   </form></Card>
+}
+
+const emptyWorkoutItem = () => ({ key: Math.random(), exercise: '', sets: 3, reps: 12, notes: '' })
+const todayIso = () => new Date().toISOString().slice(0, 10)
+const emptyWorkoutDay = (date) => ({ key: Math.random(), date: date || todayIso(), label: '', items: [emptyWorkoutItem()] })
+
+function WorkoutPlanBuilder({ assignments, onCreated, onError }) {
+  const [member, setMember] = useState(''); const [title, setTitle] = useState('')
+  const [days, setDays] = useState([emptyWorkoutDay()])
+  const [exercises, setExercises] = useState([])
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { api.get('/exercises/').then(({ data }) => setExercises(getItems(data))).catch(() => {}) }, [])
+
+  const updateDay = (dayIndex, patch) => setDays((prev) => prev.map((d, i) => i === dayIndex ? { ...d, ...patch } : d))
+  const addDay = () => setDays((prev) => [...prev, emptyWorkoutDay()])
+  const removeDay = (dayIndex) => setDays((prev) => prev.filter((_, i) => i !== dayIndex))
+
+  const updateItem = (dayIndex, itemIndex, patch) => setDays((prev) => prev.map((d, i) => i !== dayIndex ? d : {
+    ...d, items: d.items.map((it, j) => j === itemIndex ? { ...it, ...patch } : it),
+  }))
+  const addItem = (dayIndex) => setDays((prev) => prev.map((d, i) => i !== dayIndex ? d : { ...d, items: [...d.items, emptyWorkoutItem()] }))
+  const removeItem = (dayIndex, itemIndex) => setDays((prev) => prev.map((d, i) => i !== dayIndex ? d : { ...d, items: d.items.filter((_, j) => j !== itemIndex) }))
+
+  const reset = () => { setMember(''); setTitle(''); setDays([emptyWorkoutDay()]) }
+
+  const submit = async (event) => {
+    event.preventDefault()
+    if (!member || !title) { onError('عضو و عنوان برنامه را مشخص کن.'); return }
+    if (days.some((d) => d.items.some((it) => !it.exercise))) { onError('برای هر ردیف یک حرکت از کتابخانه انتخاب کن.'); return }
+    const dates = days.map((d) => d.date).sort()
+    setBusy(true)
+    try {
+      await api.post('/workout-plans/', {
+        member, title, start_date: dates[0], end_date: dates[dates.length - 1],
+        days: days.map((d) => ({
+          date: d.date, label: d.label,
+          items: d.items.map((it) => ({ exercise: it.exercise, sets: Number(it.sets), reps: Number(it.reps), notes: it.notes })),
+        })),
+      })
+      reset(); onCreated()
+    } catch (e) { onError(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  return <Card title="ساخت برنامه تمرینی روزبه‌روز">
+    <form onSubmit={submit} className="workout-builder">
+      <div className="inline-form">
+        <select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان برنامه" />
+      </div>
+      {days.map((day, dayIndex) => (
+        <div className="workout-builder-day" key={day.key}>
+          <div className="workout-builder-day-head">
+            <input type="date" value={day.date} onChange={(e) => updateDay(dayIndex, { date: e.target.value })} required />
+            <input value={day.label} onChange={(e) => updateDay(dayIndex, { label: e.target.value })} placeholder="عنوان روز (مثلاً روز پا)" />
+            {days.length > 1 && <button type="button" className="icon-button" onClick={() => removeDay(dayIndex)}><Trash2 size={15} /></button>}
+          </div>
+          {day.items.map((item, itemIndex) => (
+            <div className="workout-builder-item" key={item.key}>
+              <ExerciseCombobox exercises={exercises} value={item.exercise} onChange={(exercise) => updateItem(dayIndex, itemIndex, { exercise })} />
+              <input type="number" min="1" value={item.sets} onChange={(e) => updateItem(dayIndex, itemIndex, { sets: e.target.value })} placeholder="ست" />
+              <input type="number" min="1" value={item.reps} onChange={(e) => updateItem(dayIndex, itemIndex, { reps: e.target.value })} placeholder="تکرار" />
+              {day.items.length > 1 && <button type="button" className="icon-button" onClick={() => removeItem(dayIndex, itemIndex)}><X size={14} /></button>}
+            </div>
+          ))}
+          <button type="button" className="text-button" onClick={() => addItem(dayIndex)}><Plus size={14} /> افزودن حرکت</button>
+        </div>
+      ))}
+      <div className="inline-form">
+        <button type="button" className="button muted" onClick={addDay}><Plus size={16} /> افزودن روز</button>
+        <button className="button primary" disabled={busy}><Check size={16} /> ساخت برنامه</button>
+      </div>
+    </form>
+  </Card>
 }
 
 
 function PageTitle({ title, text }) { return <div className="page-title"><div><h2>{title}</h2><p>{text}</p></div></div> }
 function Card({ title, children, action, actionButton }) { const navigate = useNavigate(); return <section className="content-card "><header><h3>{title}</h3>{actionButton || (action && <button className="text-button" onClick={() => navigate(action)}>مشاهده همه</button>)}</header>{children}</section> }
-function Metric({ label, value, icon: Icon }) { return <article className="metric-card "><span><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></article> }
+function Metric({ label, value, icon: Icon, color = 'blue' }) { return <article className={`metric-card metric-card--${color}`}><span className="icon-chip on-tile"><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></article> }
 function Field({ label, type = 'text', value, onChange, required }) { return <label>{label}<input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} /></label> }
 function Status({ value }) { return <span className={`status ${value?.toLowerCase()}`}>{value === 'ACTIVE' ? 'فعال' : value === 'EXPIRED' ? 'منقضی' : value === 'CANCELLED' ? 'لغو شده' : value}</span> }
 function Empty({ text }) { return <p className="empty">{text}</p> }

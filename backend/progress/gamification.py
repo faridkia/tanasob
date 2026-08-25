@@ -6,7 +6,10 @@ so there's no new source of truth to keep in sync and no risk of the score
 drifting from what actually happened.
 """
 
-from django.db.models import Count
+from datetime import timedelta
+
+from django.db.models import Count, Sum
+from django.utils import timezone
 
 from accounts.models import Member
 from memberships.services import has_active_subscription
@@ -68,6 +71,38 @@ def leaderboard(organization, limit=20):
     for index, row in enumerate(rows, start=1):
         row['rank'] = index
     return rows[:limit]
+
+
+WEEKLY_SESSION_TARGET = 4
+MONTHLY_SESSION_TARGET = 12
+
+
+def goals_for_member(member):
+    """Weekly/monthly attendance goals (real check-ins vs a sensible fixed
+    target) and today's calorie target — the sum of meal items across the
+    member's active diet plan(s). No separate "goal" model: the targets are
+    fixed, sane defaults, and the progress is always derived from actual
+    Attendance/DietPlan data so it can't drift out of sync.
+    """
+    from bookings.models import Attendance
+    from plans.models import DietPlan
+
+    now = timezone.now()
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    weekly_count = Attendance.objects.filter(member=member, check_in_time__gte=week_ago).count()
+    monthly_count = Attendance.objects.filter(member=member, check_in_time__gte=month_ago).count()
+
+    calorie_target = DietPlan.objects.filter(member=member, is_archived=False).aggregate(
+        total=Sum('items__calories')
+    )['total'] or 0
+
+    return {
+        'weekly': {'count': weekly_count, 'target': WEEKLY_SESSION_TARGET},
+        'monthly': {'count': monthly_count, 'target': MONTHLY_SESSION_TARGET},
+        'calorie_target': calorie_target,
+    }
 
 
 def points_for_member(member):

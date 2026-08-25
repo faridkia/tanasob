@@ -40,11 +40,25 @@ api.interceptors.response.use(
 
 export const getItems = (payload) => (Array.isArray(payload) ? payload : payload.results || [])
 
+// DRF error payloads can nest arbitrarily deep — a plain field gives
+// {field: ["msg"]}, but a nested/list serializer (e.g. our competition
+// "prizes" rows) gives {field: [{subfield: ["msg"]}, {}]}. Flatten all of
+// it down to a single string instead of ever rendering "[object Object]".
+const collectMessages = (value, out) => {
+  if (value == null) return
+  if (typeof value === 'string') { out.push(value); return }
+  if (Array.isArray(value)) { value.forEach((item) => collectMessages(item, out)); return }
+  if (typeof value === 'object') { Object.values(value).forEach((item) => collectMessages(item, out)); return }
+  out.push(String(value))
+}
+
 export const errorMessage = (error) => {
   const data = error.response?.data
   if (!data) return 'اتصال به سرور برقرار نشد.'
   if (typeof data === 'string') return data
-  return Object.values(data).flat().join(' ') || 'درخواست با خطا روبه‌رو شد.'
+  const messages = []
+  collectMessages(data, messages)
+  return messages.join(' ') || 'درخواست با خطا روبه‌رو شد.'
 }
 
 export default api

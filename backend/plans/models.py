@@ -74,20 +74,22 @@ class Exercise(models.Model):
 
 
 class WorkoutDay(models.Model):
-    """One day within a day-split workout plan (e.g. "Day 1 — Push")."""
+    """One day within a day-split workout plan, pinned to a real calendar
+    date (e.g. "May 12 — Push Day") so members see it on an actual
+    calendar instead of an abstract "Day 1/Day 2" sequence."""
 
     workout_plan = models.ForeignKey(
         WorkoutPlan, on_delete=models.CASCADE, related_name='days'
     )
-    day_number = models.PositiveIntegerField()
+    date = models.DateField()
     label = models.CharField(max_length=100, blank=True)
 
     class Meta:
-        unique_together = ('workout_plan', 'day_number')
-        ordering = ['day_number']
+        unique_together = ('workout_plan', 'date')
+        ordering = ['date']
 
     def __str__(self):
-        return f'{self.workout_plan.title} - Day {self.day_number} ({self.label})'
+        return f'{self.workout_plan.title} - {self.date} ({self.label})'
 
 
 class WorkoutPlanItem(models.Model):

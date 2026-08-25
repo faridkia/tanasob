@@ -22,6 +22,7 @@ backend/media/
 # JavaScript and frontend builds
 node_modules/
 frontend/dist/
+frontend/dev-dist/
 frontend/.vite/
 
 # Tooling and operating-system files

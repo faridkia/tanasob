@@ -39,7 +39,7 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkoutDay
-        fields = ('id', 'day_number', 'label', 'items')
+        fields = ('id', 'date', 'label', 'items')
         read_only_fields = ('id',)
 
 

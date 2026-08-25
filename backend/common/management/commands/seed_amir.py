@@ -144,23 +144,41 @@ class Command(BaseCommand):
             member=member, trainer=trainer, title='برنامه کامل امیر',
             defaults={'start_date': today - timedelta(days=7), 'end_date': today + timedelta(days=56)},
         )
-        day, _ = WorkoutDay.objects.get_or_create(
-            workout_plan=workout_plan, day_number=1, defaults={'label': 'روز ۱'}
-        )
-        for exercise_name, sets, reps, notes in [
-            ('اسکوات هالتر', 4, 8, 'استراحت ۹۰ ثانیه بین ست‌ها.'),
-            ('ددلیفت', 3, 6, 'فرم صحیح مهم‌تر از وزنه است.'),
-            ('پرس سرشانه', 4, 10, 'کنترل کامل در فاز پایین‌رونده.'),
-            ('لانج دمبل', 3, 12, 'هر پا جداگانه شمرده شود.'),
-        ]:
-            exercise, _ = Exercise.objects.get_or_create(
-                organization=None, name=exercise_name,
-                defaults={'muscle_group': Exercise.MuscleGroup.FULL_BODY},
+        day_plan = [
+            (today, 'روز پا و سرشانه', [
+                ('اسکوات هالتر', Exercise.MuscleGroup.LEGS, 'https://www.youtube.com/watch?v=Dy28eq2PjcM', 4, 8, 'استراحت ۹۰ ثانیه بین ست‌ها.'),
+                ('پرس سرشانه', Exercise.MuscleGroup.SHOULDERS, 'https://www.youtube.com/watch?v=qEwKCR5JCog', 4, 10, 'کنترل کامل در فاز پایین‌رونده.'),
+                ('لانج دمبل', Exercise.MuscleGroup.LEGS, '', 3, 12, 'هر پا جداگانه شمرده شود.'),
+            ]),
+            (today + timedelta(days=2), 'روز سینه و پشت بازو', [
+                ('پرس سینه هالتر', Exercise.MuscleGroup.CHEST, 'https://www.youtube.com/watch?v=rT7DgCr-3pg', 4, 8, 'کتف‌ها را ثابت نگه دار.'),
+                ('پشت بازو سیم‌کش', Exercise.MuscleGroup.ARMS, '', 3, 12, 'آرنج نزدیک بدن بماند.'),
+            ]),
+            (today + timedelta(days=4), 'روز پشت و دلتوئید', [
+                ('ددلیفت', Exercise.MuscleGroup.BACK, 'https://www.youtube.com/watch?v=1ZXobu7JvvE', 3, 6, 'فرم صحیح مهم‌تر از وزنه است.'),
+                ('لت سیم‌کش', Exercise.MuscleGroup.BACK, '', 4, 10, 'شانه‌ها را پایین نگه دار.'),
+            ]),
+        ]
+        for date, label, exercises in day_plan:
+            day, _ = WorkoutDay.objects.get_or_create(
+                workout_plan=workout_plan, date=date, defaults={'label': label}
             )
-            WorkoutPlanItem.objects.get_or_create(
-                day=day, exercise=exercise,
-                defaults={'sets': sets, 'reps': reps, 'notes': notes},
-            )
+            for exercise_name, muscle_group, video_url, sets, reps, notes in exercises:
+                exercise, _ = Exercise.objects.get_or_create(
+                    organization=None, name=exercise_name,
+                    defaults={'muscle_group': muscle_group, 'video_url': video_url},
+                )
+                # This exercise may already exist as a bare legacy row from
+                # the pre-library data migration — fill in the richer demo
+                # data (muscle group, tutorial link) either way.
+                if exercise.muscle_group != muscle_group or (video_url and exercise.video_url != video_url):
+                    exercise.muscle_group = muscle_group
+                    exercise.video_url = video_url or exercise.video_url
+                    exercise.save(update_fields=['muscle_group', 'video_url'])
+                WorkoutPlanItem.objects.get_or_create(
+                    day=day, exercise=exercise,
+                    defaults={'sets': sets, 'reps': reps, 'notes': notes},
+                )
 
         diet_plan, _ = DietPlan.objects.get_or_create(
             member=member, trainer=trainer, title='رژیم کامل امیر',

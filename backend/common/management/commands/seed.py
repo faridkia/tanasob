@@ -11,6 +11,8 @@ from django.utils import timezone
 from accounts.models import Member, Trainer, TrainerMemberAssignment
 from bookings.models import Attendance, Booking
 from classes.models import ClassSession, GymClass
+from competitions.models import Competition, CompetitionParticipant, CompetitionPrize
+from events.models import Event
 from memberships.models import MembershipPlan, Payment, Subscription
 from messaging.models import Message
 from notifications.models import Notification
@@ -41,6 +43,8 @@ class Command(BaseCommand):
             self._create_training_and_diet_plans(members, trainers)
             self._create_progress_entries(members)
             self._create_messages_and_notifications(admin, members, trainers)
+            self._create_competitions(org, members)
+            self._create_events(org)
 
         self.stdout.write(self.style.SUCCESS('\n✅ داده‌های نمونه با موفقیت ایجاد شدند.'))
         self.stdout.write('\nحساب‌های آزمایشی:')
@@ -383,7 +387,7 @@ class Command(BaseCommand):
                 },
             )
             day, _ = WorkoutDay.objects.get_or_create(
-                workout_plan=workout_plan, day_number=1, defaults={'label': 'روز ۱'}
+                workout_plan=workout_plan, date=today, defaults={'label': 'روز ۱'}
             )
             for exercise_name, sets, reps, notes in exercises:
                 exercise, _ = Exercise.objects.get_or_create(
@@ -458,4 +462,73 @@ class Command(BaseCommand):
                 user=user,
                 title=title,
                 defaults={'message': message, 'type': notification_type},
+            )
+
+    def _create_competitions(self, org, members):
+        today = timezone.localdate()
+        competition_data = [
+            (
+                'چالش ۳۰ روزه بدنسازی', Competition.Kind.INDIVIDUAL, Competition.Level.ALL,
+                'طی این چالش قرار به مدت ۳۰ روز تمرینات رو انجام بدی. تغذیه‌ات رو کنترل کنی و بهترین نسخه خودت رو بسازی!',
+                today - timedelta(days=14), today + timedelta(days=16),
+                [(1, 'مدال طلا + ۵ میلیون تومان'), (2, 'مدال نقره + ۳ میلیون تومان'), (3, 'مدال برنز + ۱ میلیون تومان')],
+                [0, 1],
+            ),
+            (
+                'پاور لیفتینگ مردان', Competition.Kind.INDIVIDUAL, Competition.Level.ADVANCED,
+                'مسابقه قدرتی برای سنجش رکورد اسکوات، ددلیفت و پرس سینه.',
+                today + timedelta(days=5), today + timedelta(days=25),
+                [(1, 'مدال طلا + ۴ میلیون تومان'), (2, 'مدال نقره'), (3, 'مدال برنز')],
+                [2],
+            ),
+            (
+                'فیتنس بانوان؛ بهترین فرم', Competition.Kind.INDIVIDUAL, Competition.Level.INTERMEDIATE,
+                'مسابقه فیتنس ویژه بانوان با داوری حضوری در باشگاه.',
+                today + timedelta(days=10), today + timedelta(days=40),
+                [(1, 'مدال طلا + ۲ میلیون تومان'), (2, 'مدال نقره')],
+                [],
+            ),
+        ]
+        for title, kind, level, description, start_date, end_date, prizes, participant_idx in competition_data:
+            competition, _ = Competition.objects.get_or_create(
+                organization=org, title=title,
+                defaults={
+                    'kind': kind, 'level': level, 'description': description,
+                    'start_date': start_date, 'end_date': end_date,
+                },
+            )
+            for rank, prize_title in prizes:
+                CompetitionPrize.objects.get_or_create(
+                    competition=competition, rank=rank, defaults={'title': prize_title}
+                )
+            for idx in participant_idx:
+                if idx < len(members):
+                    CompetitionParticipant.objects.get_or_create(
+                        competition=competition, member=members[idx]
+                    )
+
+    def _create_events(self, org):
+        today = timezone.localdate()
+        event_data = [
+            (
+                'افتتاحیه سالن بدنسازی جدید', 'یک سالن مجهز با جدیدترین دستگاه‌های بدنسازی به باشگاه اضافه شد. در مراسم افتتاحیه با تخفیف ویژه ثبت‌نام کن!',
+                'سالن اصلی باشگاه', today + timedelta(days=12),
+            ),
+            (
+                'کارگاه تغذیه ورزشی', 'کارگاه آموزشی رایگان با حضور متخصص تغذیه؛ اصول تغذیه در دوران حجم و کات را یاد بگیر.',
+                'سالن کنفرانس', today + timedelta(days=22),
+            ),
+            (
+                'روز خانواده در باشگاه', 'یک روز پر انرژی همراه با خانواده؛ کلاس‌های گروهی رایگان، مسابقات دوستانه و جوایز نقدی.',
+                'باشگاه تناسب', today + timedelta(days=35),
+            ),
+            (
+                'دوره فشرده آمادگی جسمانی', 'دوره ۲ هفته‌ای فشرده برای افزایش استقامت قلبی-عروقی، ویژه اعضای فعال.',
+                'سالن کراس‌فیت', today + timedelta(days=55),
+            ),
+        ]
+        for title, description, location, event_date in event_data:
+            Event.objects.get_or_create(
+                organization=org, title=title,
+                defaults={'description': description, 'location': location, 'event_date': event_date},
             )
