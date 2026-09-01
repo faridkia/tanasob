@@ -1219,14 +1219,68 @@ function Classes({ user }) {
   const selfCheckIn = async (sessionId) => { try { await api.post('/attendance/check-in/', { session: sessionId }); setMessage('حضورت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
   const openSession = sessions.find((s) => s.id === openId) || null
   const openClass = openSession ? classes.find((c) => c.id === openSession.gym_class) : null
-  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); const cover = classes.find((c) => c.id === session.gym_class)?.cover_image; return <article className="session-card session-card-clickable" key={session.id} onClick={() => setOpenId(session.id)}>{cover && <div className="session-cover"><img src={cover} alt={session.gym_class_name} /></div>}<div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (
-    <div className="session-actions" onClick={(e) => e.stopPropagation()}>
-      {attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <><button className="button primary" onClick={() => selfCheckIn(session.id)}>ثبت حضور</button><button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button></> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>}
+
+  // One card per CLASS, not per session. The API returns every upcoming
+  // session (88 of them across 6 classes), so listing them raw made the
+  // page look like a wall of duplicates. Each class shows its next session
+  // — the one you'd actually book — and links to its own page for the rest.
+  const byClass = useMemo(() => {
+    const map = new Map()
+    sessions.forEach((session) => {
+      const list = map.get(session.gym_class) || []
+      list.push(session)
+      map.set(session.gym_class, list)
+    })
+    return [...map.entries()].map(([classId, list]) => {
+      const sorted = [...list].sort((a, b) =>
+        (a.session_date + a.start_time).localeCompare(b.session_date + b.start_time))
+      return { gymClass: classes.find((c) => c.id === classId), next: sorted[0], upcoming: sorted.length }
+    }).filter((row) => row.next)
+      .sort((a, b) => (a.next.session_date).localeCompare(b.next.session_date))
+  }, [sessions, classes])
+
+  return <section className="page-stack">
+    <PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} />
+    <Message text={message} />
+    {admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}
+    <div className="session-grid">
+      {byClass.map(({ gymClass, next, upcoming }) => {
+        const booking = bookings.find((item) => item.session === next.id && item.status === 'CONFIRMED')
+        const attended = attendance.some((item) => item.session === next.id)
+        const cover = gymClass?.cover_image
+        return <article className="session-card session-card-clickable" key={next.gym_class} onClick={() => setOpenId(next.id)}>
+          {cover && <div className="session-cover"><img src={cover} alt={next.gym_class_name} /></div>}
+          <div className="session-top">
+            <span className="session-icon"><Dumbbell size={21} /></span>
+            {upcoming > 1 && <span className="capacity">{toPersianDigits(upcoming)} جلسه پیش رو</span>}
+          </div>
+          <h3>{next.gym_class_name}</h3>
+          <p>{gymClass?.category || next.trainer_name}</p>
+          <div className="session-next">
+            <strong>{formatDate(next.session_date)}</strong>
+            <small>{next.trainer_name} · {toPersianDigits(next.start_time?.slice(0, 5))} تا {toPersianDigits(next.end_time?.slice(0, 5))}</small>
+          </div>
+          <div className="session-meta">
+            <span>{toPersianDigits(next.remaining_capacity)} جای خالی</span>
+            <Link className="text-button" to={`/classes/${next.gym_class}`} onClick={(e) => e.stopPropagation()}>صفحه کلاس</Link>
+          </div>
+          {/* A member joins a CLASS and is expected at its sessions, so the
+              card opens the class's full schedule rather than silently
+              booking whichever session happens to be next. */}
+          {user.role === 'MEMBER' && (
+            <div className="session-actions" onClick={(e) => e.stopPropagation()}>
+              <Link className="button primary" to={`/classes/${next.gym_class}`}>
+                <CalendarDays size={16} /> جلسات و رزرو
+              </Link>
+            </div>
+          )}
+        </article>
+      })}
     </div>
-  )}</article> })}</div>
-  <AnimatePresence>
-    {openSession && <SessionDetailModal session={openSession} gymClass={openClass} user={user} onClose={() => setOpenId(null)} setMessage={setMessage} />}
-  </AnimatePresence>
+    {!byClass.length && <Empty text="جلسه‌ای برای نمایش نیست." />}
+    <AnimatePresence>
+      {openSession && <SessionDetailModal session={openSession} gymClass={openClass} user={user} onClose={() => setOpenId(null)} setMessage={setMessage} />}
+    </AnimatePresence>
   </section>
 }
 
@@ -1242,12 +1296,23 @@ function ClassDetailPage({ user }) {
   const [message, setMessage] = useState('')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const [bookings, setBookings] = useState([])
+
+  const book = async (sessionId) => {
+    try { await api.post('/bookings/', { session: sessionId }); setMessage('رزرو ثبت شد.'); load() }
+    catch (e) { setMessage(errorMessage(e)) }
+  }
+  const cancelBooking = async (bookingId) => {
+    try { await api.post(`/bookings/${bookingId}/cancel/`); setMessage('رزرو لغو شد.'); load() }
+    catch (e) { setMessage(errorMessage(e)) }
+  }
 
   const load = () => {
     api.get(`/classes/${id}/`).then(({ data }) => { setGymClass(data); setDraft(data.description_html || '') })
       .catch((e) => setMessage(errorMessage(e)))
     api.get(`/classes/${id}/history/`).then(({ data }) => setHistory(data)).catch(() => {})
     api.get(`/sessions/?gym_class=${id}`).then(({ data }) => setUpcoming(getItems(data))).catch(() => {})
+    if (user.role === 'MEMBER') api.get('/bookings/').then(({ data }) => setBookings(getItems(data))).catch(() => {})
   }
   useEffect(() => { load() }, [id])
 
@@ -1295,13 +1360,17 @@ function ClassDetailPage({ user }) {
 
     <div className="content-grid">
       <Card title="جلسات پیش رو">
-        {upcoming.length ? upcoming.map((session) => (
-          <div className="list-row" key={session.id}>
+        {upcoming.length ? upcoming.map((session) => {
+          const mine = bookings.find((b) => b.session === session.id && b.status === 'CONFIRMED')
+          return <div className="list-row" key={session.id}>
             <span className="session-icon"><CalendarDays size={16} /></span>
-            <div><strong>{formatDate(session.session_date)}</strong><small>{session.trainer_name} · {toPersianDigits(session.start_time?.slice(0, 5))}</small></div>
+            <div><strong>{formatDate(session.session_date)}</strong><small>{session.trainer_name} · {toPersianDigits(session.start_time?.slice(0, 5))} تا {toPersianDigits(session.end_time?.slice(0, 5))}</small></div>
             <span className="capacity">{toPersianDigits(session.remaining_capacity)} جای خالی</span>
+            {user.role === 'MEMBER' && (mine
+              ? <button className="button muted session-book-btn" onClick={() => cancelBooking(mine.id)}>لغو رزرو</button>
+              : <button className="button primary session-book-btn" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل' : 'رزرو'}</button>)}
           </div>
-        )) : <Empty text="جلسه‌ای برای این کلاس برنامه‌ریزی نشده." />}
+        }) : <Empty text="جلسه‌ای برای این کلاس برنامه‌ریزی نشده." />}
       </Card>
       <Card title="تجربه جلسات قبلی">
         {history?.sessions?.length ? history.sessions.map((h) => (
@@ -2454,7 +2523,9 @@ function DayAgenda({ date, data, meals, onStartWorkout }) {
             <strong>{day.label || 'تمرین امروز'}</strong>
             <small>{plan.title} · {toPersianDigits(day.items.length)} حرکت</small>
           </div>
-          <button className="button primary" onClick={() => onStartWorkout(plan.id, day.id)}><Play size={15} /> شروع تمرین</button>
+          {day.date > todayIso()
+            ? <span className="capacity agenda-future">از {formatDate(day.date)} فعال می‌شود</span>
+            : <button className="button primary" onClick={() => onStartWorkout(plan.id, day.id)}><Play size={15} /> شروع تمرین</button>}
         </div>
         <div className="agenda-exercises">
           {day.items.map((item) => (
@@ -2671,6 +2742,17 @@ function WorkoutRunPage() {
 
   if (error) return <section className="page-stack"><Link to="/calendar" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به تقویم</Link><Message text={error} /></section>
   if (!day) return <section className="page-stack"><Empty text="در حال بارگذاری تمرین..." /></section>
+  // Mirrors the server rule so the member gets an explanation instead of a
+  // rejected save after they've already done the session.
+  if (day.date > todayIso()) return <section className="page-stack">
+    <Link to="/calendar" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به تقویم</Link>
+    <div className="run-complete">
+      <CalendarDays size={48} className="session-complete-icon" />
+      <h2>هنوز زود است</h2>
+      <p>این تمرین برای <strong>{formatDate(day.date)}</strong> برنامه‌ریزی شده. از همان روز می‌توانی شروعش کنی.</p>
+      <button className="button primary" onClick={() => navigate('/calendar')}>بازگشت به تقویم</button>
+    </div>
+  </section>
   return <WorkoutRunner day={day} planId={planId} onExit={() => navigate('/calendar')} />
 }
 
@@ -2706,7 +2788,7 @@ function WorkoutRunner({ day, planId, onExit }) {
     if (!finished || logged || elapsed === 0) return
     setLogged(true)
     api.post('/activities/', {
-      activity_type: 'WORKOUT', workout_plan: planId,
+      activity_type: 'WORKOUT', workout_plan: planId, workout_day: day.id,
       duration_seconds: elapsed, calories_burned: calories,
     }).catch(() => {})
   }, [finished])

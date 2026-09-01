@@ -3098,3 +3098,14 @@ input:focus, select:focus {
   font-size: .74rem; font-weight: 700;
   color: var(--accent-ink);
 }
+.agenda-future { color: var(--muted); background: var(--bg); }
+.session-next {
+  width: 100%;
+  padding: .55rem .7rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.session-next strong { display: block; font-size: .86rem; }
+.session-next small { display: block; color: var(--muted); font-size: .76rem; margin-top: .1rem; }
+.session-book-btn { flex: none; padding: .45rem .9rem; font-size: .78rem; }

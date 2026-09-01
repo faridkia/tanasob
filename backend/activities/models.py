@@ -25,6 +25,12 @@ class ActivityLog(models.Model):
     workout_plan = models.ForeignKey(
         'plans.WorkoutPlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='activity_logs'
     )
+    # Which scheduled day this session completed. Without it the server only
+    # knows "some workout from this plan finished" and cannot tell a session
+    # done on its due date from one claimed a week early.
+    workout_day = models.ForeignKey(
+        'plans.WorkoutDay', on_delete=models.SET_NULL, null=True, blank=True, related_name='activity_logs'
+    )
     duration_seconds = models.PositiveIntegerField()
     calories_burned = models.PositiveIntegerField()
     distance_km = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
