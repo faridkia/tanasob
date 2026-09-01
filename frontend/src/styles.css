@@ -1321,9 +1321,12 @@ input:focus, select:focus {
    Chat
    ============================================================ */
 .chat-layout {
-  min-height: 460px;
+  /* One property, not `height` plus a fighting `min-height`: with both, the
+     container settles on one value while its children resolve against the
+     other, and the thread collapses to a sliver. */
+  height: clamp(520px, 72vh, 720px);
   display: grid;
-  grid-template-columns: 230px 1fr;
+  grid-template-columns: 250px minmax(0, 1fr);
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface);
@@ -1332,56 +1335,173 @@ input:focus, select:focus {
 }
 .chat-layout aside {
   border-left: 1px solid var(--border);
-  padding: .5rem;
+  padding: .6rem;
   background: var(--surface-2);
+  overflow-y: auto;
+}
+.chat-aside-title {
+  margin: .2rem .4rem .5rem;
+  font-size: .72rem; font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--text-soft);
 }
 .chat-person {
   width: 100%;
   display: flex; align-items: center; gap: .55rem;
   color: var(--ink-soft);
-  text-align: right;
-  padding: .6rem;
+  text-align: start;
+  padding: .55rem .6rem;
   border-radius: var(--radius-sm);
   font-size: .88rem;
 }
+.chat-person-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-person:hover { background: var(--bg); }
 .chat-person.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
-.chat-window { display: flex; flex-direction: column; min-width: 0; }
+
+.chat-window { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.chat-header {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.chat-header strong { display: block; font-size: .92rem; }
+.chat-header small { color: var(--text-soft); font-size: .74rem; }
+
 .chat-messages {
   padding: 1.1rem;
   flex: 1;
-  display: flex; flex-direction: column; gap: .5rem;
+  min-height: 0;              /* lets the thread scroll instead of stretching the grid */
+  display: flex; flex-direction: column; gap: .35rem;
   overflow-y: auto;
+  /* No smooth scrolling here. Landing on the newest message is a jump, not
+     a journey — and an animated scroll can be throttled part-way, leaving
+     the thread parked in the middle of last week. */
 }
+
+/* Date divider */
+.chat-day { display: flex; align-items: center; gap: .6rem; margin: .8rem 0 .5rem; }
+.chat-day::before, .chat-day::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.chat-day span { font-size: .7rem; color: var(--text-soft); font-weight: 700; }
+
+/* The row owns the alignment; the bubble only owns its own look. Keeping
+   those apart is what lets the hover controls sit outside the bubble
+   without dragging it off its edge. */
+.bubble-row {
+  display: flex; align-items: center; gap: .35rem;
+  max-width: 100%;
+}
+.bubble-row.mine { flex-direction: row-reverse; align-self: flex-end; }
+.bubble-row:not(.mine) { align-self: flex-start; }
+
 .bubble {
-  max-width: min(75%, 380px);
+  max-width: min(70ch, 78%);
   background: var(--surface-2);
   border: 1px solid var(--border);
   padding: .55rem .8rem;
-  border-radius: 12px 12px 12px 3px;
+  border-radius: 14px 14px 14px 4px;
   font-size: .88rem;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.bubble-text { margin: 0; white-space: pre-wrap; }
 .bubble.mine {
-  align-self: flex-end;
   background: var(--accent);
   color: var(--on-accent);
   border-color: transparent;
-  border-radius: 12px 12px 12px 3px;
+  /* Mirrored, so the tail points back at whoever is speaking. */
+  border-radius: 14px 14px 4px 14px;
 }
 .bubble small {
   display: block;
-  opacity: .6;
+  opacity: .65;
   font-size: .65rem;
   margin-top: .25rem;
 }
-.chat-form {
-  padding: .75rem;
-  border-top: 1px solid var(--border);
-  display: flex; gap: .5rem;
+
+/* Hover controls, beside the bubble */
+.bubble-tools, .bubble-confirm {
+  display: flex; align-items: center; gap: .25rem;
+  flex: none;
+  opacity: 0;
+  transition: opacity .14s;
 }
-.chat-form input { flex: 1; }
+.bubble-confirm {
+  opacity: 1;
+  font-size: .72rem;
+  gap: .3rem;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+.bubble-row:hover .bubble-tools, .bubble-tools:focus-within { opacity: 1; }
+/* Touch devices have no hover, so the controls stay visible there rather
+   than being unreachable. */
+@media (hover: none) { .bubble-tools { opacity: 1; } }
+.bubble-btn { width: 26px; height: 26px; border-radius: 8px; flex: none; }
+.bubble-edited { font-size: .68rem; }
+
+/* Inline edit. Previously a single-line <input> inside the accent bubble,
+   with save/cancel rendered as accent-coloured text ON the accent — which
+   left a large empty block of colour and no visible way out. */
+.bubble.editing { padding: .5rem; min-width: min(320px, 70vw); }
+.grow-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .5rem .6rem;
+  font: inherit;
+  font-size: .88rem;
+  line-height: 1.6;
+  background: var(--surface);
+  color: var(--ink);
+  overflow-y: auto;
+}
+.grow-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.edit-actions { display: flex; gap: .4rem; margin-top: .45rem; }
+
+.button.tiny {
+  padding: .3rem .7rem;
+  font-size: .76rem;
+  border-radius: 8px;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: .25rem;
+}
+/* On the accent bubble these need their own ground to be legible — the
+   plain text button vanished into the background behind it. */
+.bubble.mine .button.tiny { background: var(--surface); color: var(--ink); border: 0; }
+/* Outlined, not veiled. A translucent white wash over the accent lightens
+   the ground under the label — on the light theme that pushed white-on-teal
+   from 4.9:1 down to 2.9:1. Leaving the accent itself as the background
+   keeps the same contrast the bubble's own text has. */
+.bubble.mine .button.tiny.ghost {
+  background: transparent;
+  color: var(--on-accent);
+  border: 1px solid color-mix(in srgb, var(--on-accent) 55%, transparent);
+}
+.button.tiny.danger { background: var(--danger); color: #fff; border: 0; }
+.button.tiny.ghost { background: var(--surface-2); color: var(--ink-soft); border: 1px solid var(--border); }
+
+.chat-form {
+  padding: .7rem;
+  border-top: 1px solid var(--border);
+  display: flex; gap: .5rem; align-items: flex-end;
+  background: var(--surface);
+}
+.chat-form .grow-input { flex: 1; }
+.chat-send { flex: 0 0 auto; height: 42px; width: 46px; padding: 0; justify-content: center; }
+.chat-send:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .chat-layout { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .chat-layout aside {
+    border-left: 0; border-bottom: 1px solid var(--border);
+    display: flex; gap: .4rem; overflow-x: auto;
+  }
+  .chat-aside-title { display: none; }
+  .chat-person { width: auto; flex: 0 0 auto; }
+  .chat-messages { max-height: 55vh; }
+}
 
 /* ---- AI assistant widget ---- */
 .assistant-fab {
@@ -3023,22 +3143,6 @@ input:focus, select:focus {
 .trainer-facts .rate-text { font-size: 1.05rem; font-weight: 700; letter-spacing: 0; line-height: 1.4; }
 
 /* ---- Message edit / delete ---- */
-.bubble { position: relative; }
-.bubble-actions {
-  display: flex; align-items: center; gap: .3rem;
-  margin-top: .35rem;
-  font-size: .72rem;
-  opacity: 0;
-  transition: opacity .14s;
-}
-.bubble:hover .bubble-actions, .bubble-editing .bubble-actions { opacity: 1; }
-/* Touch devices have no hover, so the controls stay visible there rather
-   than being unreachable. */
-@media (hover: none) { .bubble-actions { opacity: 1; } }
-.bubble-btn { width: 24px; height: 24px; border-radius: 7px; }
-.bubble-btn svg { width: 12px; height: 12px; }
-.bubble-edited { color: var(--muted-2); font-size: .68rem; }
-.bubble-editing input { font-size: .88rem; }
 .danger-text { color: var(--danger); }
 
 /* ============================================================

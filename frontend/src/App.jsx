@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, Fragment, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   Activity, Award, ArrowLeft, Bell, Bot, Building2, CalendarDays, CalendarRange, Camera, Check, CheckCircle2,
@@ -3349,6 +3349,37 @@ function Progress() {
   return <section className="page-stack"><PageTitle title="پیشرفت بدن" text="اعداد کوچک، تغییرهای بزرگ می‌سازند." /><Message text={message} /><div className="content-grid"><Card title="ثبت اندازه‌گیری"><form onSubmit={submit} className="form-grid compact"><JalaliDateField label="تاریخ" value={form.recorded_at} onChange={(recorded_at) => setForm({ ...form, recorded_at })} required /><Field label="وزن (کیلوگرم)" type="number" value={form.weight_kg} onChange={(weight_kg) => setForm({ ...form, weight_kg })} required /><Field label="چربی بدن (%)" type="number" value={form.body_fat_percent} onChange={(body_fat_percent) => setForm({ ...form, body_fat_percent })} /><Field label="دور کمر (سانتی‌متر)" type="number" value={form.waist_cm} onChange={(waist_cm) => setForm({ ...form, waist_cm })} /><button className="button primary">ثبت پیشرفت <Plus size={17} /></button></form></Card><Card title="روند پیشرفت" actionButton={<div className="factor-toggle">{PROGRESS_FACTORS.map((item) => <button key={item.key} className={item.key === factor ? 'chip active' : 'chip'} onClick={() => setFactor(item.key)}>{item.label}</button>)}</div>}>{entries.length ? <><div className="progress-chart"><ResponsiveContainer width="100%" height={220}><AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}><defs><linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} /><stop offset="100%" stopColor="var(--accent)" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} /><YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={40} domain={['auto', 'auto']} /><Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ color: 'var(--ink)' }} formatter={(value) => [`${value} ${activeFactor.unit}`, activeFactor.label]} /><Area type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} fill="url(#progressFill)" connectNulls dot={{ r: 3, fill: 'var(--accent)', strokeWidth: 0 }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div><div className="progress-list">{entries.map((entry) => <div className="progress-row" key={entry.id}><div><strong>{formatDate(entry.recorded_at)}</strong><small>{entry.notes || 'یادداشتی ثبت نشده'}</small></div><div className="progress-values"><span>{entry.weight_kg} kg</span><span>{entry.body_fat_percent ?? '—'}%</span><span>{entry.waist_cm ?? '—'} cm</span></div></div>)}</div></> : <Empty text="اولین اندازه‌گیری را ثبت کن." />}</Card></div></section>
 }
 
+/** A textarea that grows with its content instead of scrolling inside one
+ *  line. Used by both the composer and the inline editor so a long message
+ *  is written the same way it is read. */
+function GrowingTextarea({ value, onChange, onSubmit, onCancel, placeholder, autoFocus, maxRows = 6 }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // Reset first: without it the height only ever ratchets upward, because
+    // scrollHeight can never report less than the height already set.
+    el.style.height = 'auto'
+    const line = parseFloat(getComputedStyle(el).lineHeight) || 20
+    el.style.height = `${Math.min(el.scrollHeight, line * maxRows + 16)}px`
+  }, [value, maxRows])
+  return <textarea
+    ref={ref}
+    rows={1}
+    className="grow-input"
+    value={value}
+    autoFocus={autoFocus}
+    placeholder={placeholder}
+    onChange={(e) => onChange(e.target.value)}
+    onKeyDown={(e) => {
+      // Enter sends; Shift+Enter is how you write a second line. Doing it
+      // the other way round makes every multi-line message an accident.
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit?.() }
+      if (e.key === 'Escape') onCancel?.()
+    }}
+  />
+}
+
 function Messages({ user }) {
   const [assignments, setAssignments] = useState([]); const [partner, setPartner] = useState(''); const [messages, setMessages] = useState([]); const [content, setContent] = useState(''); const [message, setMessage] = useState('')
   useEffect(() => { api.get('/auth/assignments/').then(({ data }) => { const items = getItems(data); setAssignments(items); if (items[0]) setPartner(String(user.role === 'MEMBER' ? items[0].trainer_user_id : items[0].member_user_id)) }).catch((e) => setMessage(errorMessage(e))) }, [user.role])
@@ -3356,8 +3387,9 @@ function Messages({ user }) {
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState('')
   const [confirmId, setConfirmId] = useState(null)
+  const scroller = useRef(null)
   const reload = async () => { const { data } = await api.get(`/messages/?with=${partner}`); setMessages(getItems(data)) }
-  const send = async (event) => { event.preventDefault(); if (!content) return; try { await api.post('/messages/send/', { receiver: partner, content }); setContent(''); await reload() } catch (e) { setMessage(errorMessage(e)) } }
+  const send = async (event) => { event?.preventDefault(); if (!content.trim()) return; try { await api.post('/messages/send/', { receiver: partner, content }); setContent(''); await reload() } catch (e) { setMessage(errorMessage(e)) } }
   const saveEdit = async (id) => {
     if (!editDraft.trim()) return
     try { await api.patch(`/messages/${id}/`, { content: editDraft }); setEditingId(null); await reload() }
@@ -3369,33 +3401,112 @@ function Messages({ user }) {
   }
   const label = (item) => user.role === 'MEMBER' ? item.trainer_name : item.member_name
   const partnerId = (item) => String(user.role === 'MEMBER' ? item.trainer_user_id : item.member_user_id)
-  return <section className="page-stack"><PageTitle title="گفت‌وگو با مربی" text="سؤال‌ها، بازخوردها و همراهی روزانه." /><Message text={message} /><div className="chat-layout "><aside>{assignments.map((item) => <button className={partnerId(item) === partner ? 'chat-person active' : 'chat-person'} key={item.id} onClick={() => setPartner(partnerId(item))}><span className="avatar">{label(item)?.[0]}</span>{label(item)}</button>)}</aside><section className="chat-window">{partner ? <><div className="chat-messages">{messages.map((item) => {
-      const mine = item.sender === user.id
-      if (editingId === item.id) return <div className="bubble mine bubble-editing" key={item.id}>
-        <input value={editDraft} onChange={(e) => setEditDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(item.id); if (e.key === 'Escape') setEditingId(null) }} autoFocus />
-        <div className="bubble-actions">
-          <button className="text-button" onClick={() => saveEdit(item.id)}>ذخیره</button>
-          <button className="text-button" onClick={() => setEditingId(null)}>انصراف</button>
-        </div>
-      </div>
-      return <div className={mine ? 'bubble mine' : 'bubble'} key={item.id}>
-        {item.content}
-        <small>
-          {new Date(item.sent_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
-          {item.edited_at && <span className="bubble-edited"> · ویرایش شده</span>}
-        </small>
-        {/* Only your own words are yours to change. */}
-        {mine && (confirmId === item.id
-          ? <div className="bubble-actions"><span>حذف شود؟</span>
-              <button className="text-button danger-text" onClick={() => removeMessage(item.id)}>بله</button>
-              <button className="text-button" onClick={() => setConfirmId(null)}>خیر</button>
+
+  // A conversation is read bottom-up: land on the newest message, not the
+  // oldest one from weeks ago.
+  useEffect(() => {
+    const el = scroller.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, partner])
+
+  // Group by day so a long thread reads as a timeline rather than one run-on
+  // column with no sense of when anything happened.
+  const days = useMemo(() => {
+    const out = []
+    messages.forEach((item) => {
+      const day = String(item.sent_at).slice(0, 10)
+      if (!out.length || out[out.length - 1].day !== day) out.push({ day, items: [] })
+      out[out.length - 1].items.push(item)
+    })
+    return out
+  }, [messages])
+
+  const dayLabel = (day) => {
+    const today = todayIso()
+    if (day === today) return 'امروز'
+    const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10)
+    if (day === yesterday) return 'دیروز'
+    return formatDate(day)
+  }
+
+  const activePartner = assignments.find((a) => partnerId(a) === partner)
+
+  return <section className="page-stack">
+    <PageTitle title="گفت‌وگو با مربی" text="سؤال‌ها، بازخوردها و همراهی روزانه." />
+    <Message text={message} />
+    <div className="chat-layout">
+      <aside>
+        <p className="chat-aside-title">گفت‌وگوها</p>
+        {assignments.length ? assignments.map((item) => (
+          <button className={partnerId(item) === partner ? 'chat-person active' : 'chat-person'} key={item.id} onClick={() => setPartner(partnerId(item))}>
+            <span className="avatar">{label(item)?.[0]}</span>
+            <span className="chat-person-name">{label(item)}</span>
+          </button>
+        )) : <Empty text="هنوز مربی‌ای به تو اختصاص داده نشده." />}
+      </aside>
+      <section className="chat-window">
+        {partner ? <>
+          <header className="chat-header">
+            <span className="avatar">{label(activePartner || {})?.[0]}</span>
+            <div>
+              <strong>{label(activePartner || {}) || 'گفت‌وگو'}</strong>
+              <small>{user.role === 'MEMBER' ? 'مربی تو' : 'شاگرد تو'}</small>
             </div>
-          : <div className="bubble-actions">
-              <button className="icon-button bubble-btn" title="ویرایش" onClick={() => { setEditingId(item.id); setEditDraft(item.content) }}><Edit2 size={12} /></button>
-              <button className="icon-button bubble-btn" title="حذف" onClick={() => setConfirmId(item.id)}><Trash2 size={12} /></button>
-            </div>)}
-      </div>
-    })}</div><form className="chat-form" onSubmit={send}><input value={content} onChange={(e) => setContent(e.target.value)} placeholder="پیامت را بنویس..." /><button className="button primary"><MessageCircle size={18} /></button></form></> : <Empty text="مخاطبی برای گفت‌وگو پیدا نشد." />}</section></div></section>
+          </header>
+          <div className="chat-messages" ref={scroller}>
+            {days.length ? days.map(({ day, items }) => <Fragment key={day}>
+              <div className="chat-day"><span>{dayLabel(day)}</span></div>
+              {items.map((item) => {
+                const mine = item.sender === user.id
+                if (editingId === item.id) return <div className="bubble-row mine" key={item.id}>
+                  <div className="bubble mine editing">
+                    <GrowingTextarea
+                      value={editDraft}
+                      onChange={setEditDraft}
+                      onSubmit={() => saveEdit(item.id)}
+                      onCancel={() => setEditingId(null)}
+                      autoFocus
+                    />
+                    <div className="edit-actions">
+                      <button className="button tiny" onClick={() => saveEdit(item.id)}><Check size={14} /> ذخیره</button>
+                      <button className="button tiny ghost" onClick={() => setEditingId(null)}>انصراف</button>
+                    </div>
+                  </div>
+                </div>
+
+                return <div className={mine ? 'bubble-row mine' : 'bubble-row'} key={item.id}>
+                  <div className={mine ? 'bubble mine' : 'bubble'}>
+                    <p className="bubble-text">{item.content}</p>
+                    <small>
+                      {new Date(item.sent_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                      {item.edited_at && <span className="bubble-edited"> · ویرایش شده</span>}
+                    </small>
+                  </div>
+                  {/* Only your own words are yours to change. The controls sit
+                      beside the bubble, not inside it: in there they changed
+                      its height on hover and pushed the thread around. */}
+                  {mine && (confirmId === item.id
+                    ? <div className="bubble-confirm">
+                        <span>حذف شود؟</span>
+                        <button className="button tiny danger" onClick={() => removeMessage(item.id)}>بله</button>
+                        <button className="button tiny ghost" onClick={() => setConfirmId(null)}>خیر</button>
+                      </div>
+                    : <div className="bubble-tools">
+                        <button className="icon-button bubble-btn" title="ویرایش پیام" aria-label="ویرایش پیام" onClick={() => { setEditingId(item.id); setEditDraft(item.content) }}><Edit2 size={13} /></button>
+                        <button className="icon-button bubble-btn" title="حذف پیام" aria-label="حذف پیام" onClick={() => setConfirmId(item.id)}><Trash2 size={13} /></button>
+                      </div>)}
+                </div>
+              })}
+            </Fragment>) : <Empty text="هنوز پیامی رد و بدل نشده. اولین پیام را تو بنویس." />}
+          </div>
+          <form className="chat-form" onSubmit={send}>
+            <GrowingTextarea value={content} onChange={setContent} onSubmit={send} placeholder="پیامت را بنویس... (Shift+Enter برای خط جدید)" />
+            <button className="button primary chat-send" disabled={!content.trim()} title="ارسال"><Send size={18} /></button>
+          </form>
+        </> : <Empty text="مخاطبی برای گفت‌وگو پیدا نشد." />}
+      </section>
+    </div>
+  </section>
 }
 
 function Notifications({ user }) {
