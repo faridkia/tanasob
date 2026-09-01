@@ -8,6 +8,61 @@ messaging, notifications, admin reporting, and an AI assistant chat.
 
 **Live demo:** https://tanasob.flora-app.ir
 
+## Screenshots
+
+Persian (RTL) interface throughout, with a Jalali calendar and light/dark themes.
+
+### Member
+
+| Dashboard | My calendar |
+|---|---|
+| ![Dashboard](docs/screenshots/01-dashboard.jpg) | ![Calendar](docs/screenshots/02-calendar.jpg) |
+
+Every day shows the member's workout, booked classes, gym events and diet
+meals in one Shamsi month view.
+
+| Guided workout | Goals |
+|---|---|
+| ![Workout](docs/screenshots/05-workout-run.jpg) | ![Goals](docs/screenshots/06-goals.jpg) |
+
+The workout runner walks through one exercise at a time with a live timer,
+per-set ticks, a rest countdown and the muscle groups being worked. Goals are
+set per member rather than shared constants.
+
+| Classes | Class detail |
+|---|---|
+| ![Classes](docs/screenshots/03-classes.jpg) | ![Class detail](docs/screenshots/04-class-detail.jpg) |
+
+Each class has its own page with its trainers, full schedule and a history
+panel showing sessions held, average attendance and the real show-up rate.
+
+| Leaderboard & tiers | Trainers |
+|---|---|
+| ![Leaderboard](docs/screenshots/07-leaderboard.jpg) | ![Trainers](docs/screenshots/08-trainers.jpg) |
+
+Tiers are earned by attendance (36/72/144/288 sessions) and carry a standing
+membership discount; the top three of each period get a one-time prize plus a
+smaller permanent one. Discounts never stack — the best single one applies.
+
+| Blog | Dark theme |
+|---|---|
+| ![Blog](docs/screenshots/09-blog.jpg) | ![Dark](docs/screenshots/12-dashboard-dark.jpg) |
+
+### Admin
+
+| Admin panel | Gym-wide calendar |
+|---|---|
+| ![Admin](docs/screenshots/10-admin.jpg) | ![Admin calendar](docs/screenshots/11-admin-calendar.jpg) |
+
+There is no Django admin in the product surface — user management, analytics
+(attendance rate, churn, ARPU, at-risk members, per-class performance) and the
+whole-gym schedule are built into the app itself.
+
+### Public
+
+![Landing](docs/screenshots/13-landing.jpg)
+
+
 ## Project structure
 
 ```text

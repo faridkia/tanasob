@@ -3100,14 +3100,50 @@ input:focus, select:focus {
 .tier-foot { margin-top: .3rem; padding-top: .8rem; border-top: 1px solid var(--border); }
 .tier-perk { color: var(--gold-ink); font-weight: 700; }
 
-/* ---- Jalali date echo ---- */
-.jalali-date { position: relative; }
-.jalali-date-echo {
-  display: block;
-  margin-top: .25rem;
-  font-size: .74rem; font-weight: 700;
-  color: var(--accent-ink);
+/* ---- Jalali date picker ---- */
+.jalali-field { position: relative; display: grid; gap: .4rem; }
+.jalali-field-label { color: var(--muted); font-size: .8rem; font-weight: 500; }
+.jalali-trigger {
+  display: flex; align-items: center; gap: .5rem;
+  width: 100%;
+  padding: .6rem .7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: .9rem;
+  text-align: start;
 }
+.jalali-trigger.empty { color: var(--muted-2); }
+.jalali-trigger:hover { border-color: var(--accent); }
+.jalali-pop {
+  position: absolute; top: 100%; inset-inline-start: 0;
+  z-index: 30;
+  margin-top: .4rem;
+  width: 268px;
+  padding: .8rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+.jalali-pop-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .6rem; }
+.jalali-pop-head strong { font-size: .88rem; }
+.jalali-pop-head .icon-button { width: 30px; height: 30px; border-radius: 9px; }
+.jalali-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; }
+.jalali-weekday { font-size: .68rem; color: var(--muted-2); padding-bottom: .3rem; }
+.jalali-day {
+  aspect-ratio: 1;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  font-size: .78rem;
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+}
+.jalali-day:hover { background: var(--bg); }
+.jalali-day.today { border-color: var(--accent); }
+.jalali-day.selected { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.jalali-today-btn { display: block; margin: .6rem auto 0; }
 .agenda-future { color: var(--muted); background: var(--bg); }
 .session-next {
   width: 100%;
@@ -3169,3 +3205,6 @@ input:focus, select:focus {
 .user-edit-row input { flex: 1; min-width: 0; }
 .user-manage-note { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); font-size: .78rem; }
 .auth-note { color: var(--muted); font-size: .8rem; line-height: 1.8; text-align: center; margin-top: 1rem; }
+.trainer-row-photo { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border); }
+.month-chip.more { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.month-chip.more:hover { color: var(--accent-ink); }

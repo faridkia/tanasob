@@ -1304,6 +1304,16 @@ function ClassDetailPage({ user }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [bookings, setBookings] = useState([])
+  const [trainers, setTrainers] = useState([])
+
+  // The trainers who actually teach this class, drawn from its sessions —
+  // there's no direct class→trainer link in the model, so it's derived.
+  const classTrainers = useMemo(() => {
+    const ids = new Set()
+    ;[...upcoming, ...(history?.sessions || [])].forEach((s) => s.trainer_id && ids.add(s.trainer_id))
+    upcoming.forEach((s) => s.trainer && ids.add(s.trainer))
+    return trainers.filter((t) => ids.has(t.id))
+  }, [upcoming, history, trainers])
 
   const book = async (sessionId) => {
     try { await api.post('/bookings/', { session: sessionId }); setMessage('رزرو ثبت شد.'); load() }
@@ -1318,8 +1328,10 @@ function ClassDetailPage({ user }) {
     api.get(`/classes/${id}/`).then(({ data }) => { setGymClass(data); setDraft(data.description_html || '') })
       .catch((e) => setMessage(errorMessage(e)))
     api.get(`/classes/${id}/history/`).then(({ data }) => setHistory(data)).catch(() => {})
-    api.get(`/sessions/?gym_class=${id}`).then(({ data }) => setUpcoming(getItems(data))).catch(() => {})
+    api.get(`/sessions/?gym_class=${id}&from=${todayIso()}&page_size=100`)
+      .then(({ data }) => setUpcoming(getItems(data))).catch(() => {})
     if (user.role === 'MEMBER') api.get('/bookings/').then(({ data }) => setBookings(getItems(data))).catch(() => {})
+    api.get('/auth/trainers/all/').then(({ data }) => setTrainers(getItems(data))).catch(() => {})
   }
   useEffect(() => { load() }, [id])
 
@@ -1378,6 +1390,17 @@ function ClassDetailPage({ user }) {
               : <button className="button primary session-book-btn" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل' : 'رزرو'}</button>)}
           </div>
         }) : <Empty text="جلسه‌ای برای این کلاس برنامه‌ریزی نشده." />}
+      </Card>
+      <Card title="مربیان این کلاس">
+        {classTrainers.length ? classTrainers.map((t) => (
+          <Link className="list-row class-link-row" key={t.id} to={`/trainers/${t.id}`}>
+            {t.photo
+              ? <img className="trainer-row-photo" src={t.photo} alt={t.full_name} />
+              : <span className="avatar">{t.full_name?.[0]}</span>}
+            <div><strong>{t.full_name}</strong><small>{t.specialization || 'مربی باشگاه'}</small></div>
+            <ChevronLeft size={16} />
+          </Link>
+        )) : <Empty text="مربی‌ای برای این کلاس ثبت نشده." />}
       </Card>
       <Card title="تجربه جلسات قبلی">
         {history?.sessions?.length ? history.sessions.map((h) => (
@@ -2397,6 +2420,7 @@ function MyCalendarPage({ user }) {
   const [sessions, setSessions] = useState([])
   const [message, setMessage] = useState('')
   const [selectedDate, setSelectedDate] = useState(todayIso)
+  const [popupDate, setPopupDate] = useState(null)
 
   useEffect(() => {
     // Staff read the schedule itself; members read what they signed up for.
@@ -2466,15 +2490,33 @@ function MyCalendarPage({ user }) {
       {!staff && <button className="button muted walk-cta" onClick={() => navigate('/walk')}><MapPin size={16} /> آغاز پیاده‌روی</button>}
     </div>
     <Message text={message} />
-    <MonthCalendar dayMap={dayMap} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+    <MonthCalendar dayMap={dayMap} selectedDate={selectedDate} onSelectDate={setSelectedDate} onOpenDay={setPopupDate} />
     <DayAgenda date={selectedDate} data={selected} meals={meals} canStart={!staff}
       onStartWorkout={(planId, dayId) => navigate(`/workout/${planId}/${dayId}`)} />
+    <AnimatePresence>
+      {popupDate && (
+        <motion.div className="modal-overlay" onClick={() => setPopupDate(null)}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+          <motion.div className="modal-card modal-card-media" onClick={(e) => e.stopPropagation()}
+            initial={{ opacity: 0, scale: .95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }}>
+            <button className="icon-button modal-close" onClick={() => setPopupDate(null)}><X size={17} /></button>
+            <DayAgenda
+              date={popupDate}
+              data={dayMap.get(popupDate) || { workouts: [], classes: [], events: [] }}
+              meals={mealsFor(popupDate)}
+              canStart={!staff}
+              onStartWorkout={(planId, dayId) => { setPopupDate(null); navigate(`/workout/${planId}/${dayId}`) }}
+            />
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   </section>
 }
 
 /** Full-width month grid. Same Jalali maths as the compact calendar inside
  * a plan modal, but each cell is a real surface that can carry chips. */
-function MonthCalendar({ dayMap, selectedDate, onSelectDate }) {
+function MonthCalendar({ dayMap, selectedDate, onSelectDate, onOpenDay }) {
   const today = new Date()
   const [todayJy, todayJm] = gregorianToJalali(today.getFullYear(), today.getMonth() + 1, today.getDate())
   const [viewYear, setViewYear] = useState(todayJy)
@@ -2530,6 +2572,9 @@ function MonthCalendar({ dayMap, selectedDate, onSelectDate }) {
             key={cell.key}
             className={`month-cell ${cell.key === selectedDate ? 'selected' : ''} ${cell.key === todayKey ? 'today' : ''} ${chips.length ? 'has-items' : ''}`}
             onClick={() => onSelectDate(cell.key)}
+            // A cell can only show three chips; a second click (or a click on
+            // an already-selected day) opens everything that didn't fit.
+            onDoubleClick={() => chips.length && onOpenDay?.(cell.key)}
           >
             <span className="month-cell-date">{toPersianDigits(cell.jDay)}</span>
             <span className="month-cell-chips">
@@ -2538,7 +2583,12 @@ function MonthCalendar({ dayMap, selectedDate, onSelectDate }) {
                   {chip.time && <b>{toPersianDigits(chip.time)}</b>}{chip.text}
                 </span>
               ))}
-              {chips.length > 3 && <span className="month-chip more">+{toPersianDigits(chips.length - 3)} مورد دیگر</span>}
+              {chips.length > 3 && (
+                <span className="month-chip more" role="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenDay?.(cell.key) }}>
+                  +{toPersianDigits(chips.length - 3)} مورد دیگر
+                </span>
+              )}
             </span>
           </button>
         )
@@ -3938,19 +3988,82 @@ function WorkoutPlanBuilder({ assignments, onCreated, onError }) {
 
 
 
-/** Native date input with a live Jalali readout.
+/** A real Jalali date picker.
  *
- *  `<input type="date">` renders its picker in the BROWSER's locale, which
- *  is why these showed mm/dd/yyyy — that's not something CSS or a prop can
- *  change. Rather than hand-roll a calendar widget (and inherit its
- *  keyboard/mobile/validation bugs), the reliable native control stays and
- *  the Persian date is echoed underneath, so what the user reads is always
- *  Jalali even while the picker itself is the OS one. */
+ *  The previous version wrapped `<input type="date">` and printed the
+ *  Persian equivalent underneath. That kept the OS picker — which renders
+ *  in the BROWSER's locale, so an Iranian user still picked their dates off
+ *  a Gregorian grid. This one is a Jalali month grid: the value stays an
+ *  ISO date on the wire (the API speaks Gregorian) while everything the
+ *  user sees and clicks is Shamsi. */
 function JalaliDateField({ label, value, onChange, required }) {
-  return <label className="jalali-date">{label}
-    <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} required={required} />
-    {value && <small className="jalali-date-echo">{formatDate(value)}</small>}
-  </label>
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef(null)
+
+  const today = new Date()
+  const [todayJy, todayJm, todayJd] = gregorianToJalali(today.getFullYear(), today.getMonth() + 1, today.getDate())
+  const selected = useMemo(() => {
+    if (!value) return null
+    const [gy, gm, gd] = value.split('-').map(Number)
+    const [jy, jm, jd] = gregorianToJalali(gy, gm, gd)
+    return { jy, jm, jd }
+  }, [value])
+
+  const [viewYear, setViewYear] = useState(selected?.jy ?? todayJy)
+  const [viewMonth, setViewMonth] = useState(selected?.jm ?? todayJm)
+
+  useEffect(() => {
+    const onDocClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  const monthLen = jalaliMonthLength(viewYear, viewMonth)
+  const [firstGy, firstGm, firstGd] = jalaliToGregorian(viewYear, viewMonth, 1)
+  const leadingBlanks = (new Date(firstGy, firstGm - 1, firstGd).getDay() + 1) % 7
+  const monthLabel = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long' })
+    .format(new Date(firstGy, firstGm - 1, firstGd))
+
+  const prev = () => viewMonth === 1 ? (setViewYear(viewYear - 1), setViewMonth(12)) : setViewMonth(viewMonth - 1)
+  const next = () => viewMonth === 12 ? (setViewYear(viewYear + 1), setViewMonth(1)) : setViewMonth(viewMonth + 1)
+  const choose = (jd) => {
+    const [gy, gm, gd] = jalaliToGregorian(viewYear, viewMonth, jd)
+    onChange(isoDate(gy, gm, gd))
+    setOpen(false)
+  }
+
+  return <div className="jalali-field" ref={boxRef}>
+    {label && <span className="jalali-field-label">{label}</span>}
+    <button type="button" className={`jalali-trigger ${!value ? 'empty' : ''}`} onClick={() => setOpen((v) => !v)}>
+      <CalendarDays size={15} />
+      {value ? formatDate(value) : 'انتخاب تاریخ'}
+    </button>
+    {/* Keeps native form validation working even though the control is custom. */}
+    <input type="hidden" value={value || ''} required={required} readOnly />
+    {open && <div className="jalali-pop">
+      <div className="jalali-pop-head">
+        <button type="button" className="icon-button" onClick={next}><ChevronRight size={15} /></button>
+        <strong>{monthLabel}</strong>
+        <button type="button" className="icon-button" onClick={prev}><ChevronLeft size={15} /></button>
+      </div>
+      <div className="jalali-grid">
+        {WEEKDAY_LABELS_SAT_FIRST.map((w) => <span className="jalali-weekday" key={w}>{w}</span>)}
+        {Array(leadingBlanks).fill(null).map((_, i) => <span key={`b-${i}`} />)}
+        {Array.from({ length: monthLen }, (_, i) => i + 1).map((jd) => {
+          const isSelected = selected && selected.jy === viewYear && selected.jm === viewMonth && selected.jd === jd
+          const isToday = todayJy === viewYear && todayJm === viewMonth && todayJd === jd
+          return <button
+            type="button" key={jd}
+            className={`jalali-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+            onClick={() => choose(jd)}
+          >{toPersianDigits(jd)}</button>
+        })}
+      </div>
+      <button type="button" className="text-button jalali-today-btn" onClick={() => {
+        setViewYear(todayJy); setViewMonth(todayJm); choose(todayJd)
+      }}>امروز</button>
+    </div>}
+  </div>
 }
 
 function PageTitle({ title, text }) { return <div className="page-title"><div><h2>{title}</h2><p>{text}</p></div></div> }
