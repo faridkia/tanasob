@@ -36,3 +36,6 @@ htmlcov/
 .vscode/
 .DS_Store
 *.log
+
+# Local editor/tooling settings (machine-specific)
+.claude/

@@ -10,4 +10,5 @@ urlpatterns = [
     path('bookings/<int:pk>/cancel/', views.CancelBookingView.as_view(), name='booking-cancel'),
     path('attendance/', views.AttendanceListView.as_view(), name='attendance-list'),
     path('attendance/check-in/', views.CheckInView.as_view(), name='attendance-checkin'),
+    path('attendance/send-reminders/', views.SendSessionRemindersView.as_view(), name='send-session-reminders'),
 ]

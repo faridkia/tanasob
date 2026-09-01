@@ -6,6 +6,7 @@ from . import views
 
 urlpatterns = [
     path('messages/', views.ConversationView.as_view(), name='messages'),
+    path('messages/<int:pk>/', views.MessageDetailView.as_view(), name='message-detail'),
     path('messages/send/', views.SendMessageView.as_view(), name='message-send'),
     path('messages/mark-read/', views.MarkMessagesReadView.as_view(), name='messages-mark-read'),
 ]

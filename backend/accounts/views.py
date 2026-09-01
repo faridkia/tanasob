@@ -1,4 +1,5 @@
 import io
+from datetime import timedelta
 
 import qrcode
 from django.http import HttpResponse
@@ -204,6 +205,164 @@ class TrainerListView(generics.ListAPIView):
         return Trainer.objects.filter(
             user__organization=self.request.user.organization
         ).select_related('user').order_by('user__full_name')
+
+
+class TrainerPublicListView(generics.ListAPIView):
+    """The trainer roster everyone in the gym can browse — backs the "our
+    trainers" grid that links through to each profile."""
+
+    serializer_class = TrainerListSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Trainer.objects.filter(
+            user__organization=self.request.user.organization
+        ).select_related('user').order_by('user__full_name')
+
+
+class TrainerProfileView(APIView):
+    """One trainer's public page: who they are, what they teach, and how
+    much of it they've done.
+
+    Student figures are deliberately aggregate. A trainer's roster is other
+    members' private business, so this returns counts — never names — to
+    anyone but the trainer themselves and admins.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from django.db.models import Count, Q
+        from django.utils import timezone
+
+        from bookings.models import Attendance
+        from classes.models import ClassSession, GymClass
+
+        org = request.user.organization
+        try:
+            trainer = Trainer.objects.select_related('user').get(pk=pk, user__organization=org)
+        except Trainer.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        today = timezone.localdate()
+        sessions = ClassSession.objects.filter(trainer=trainer)
+        held = sessions.filter(session_date__lt=today)
+        upcoming = (
+            sessions.filter(session_date__gte=today)
+            .select_related('gym_class')
+            .annotate(booked=Count('bookings', filter=Q(bookings__status='CONFIRMED'), distinct=True))
+            .order_by('session_date', 'start_time')[:10]
+        )
+
+        # Distinct people taught, counted without ever exposing who they are.
+        students_taught = (
+            Attendance.objects.filter(session__trainer=trainer)
+            .values('member_id').distinct().count()
+        )
+        active_students = TrainerMemberAssignment.objects.filter(
+            trainer=trainer, status=TrainerMemberAssignment.Status.ACTIVE
+        ).count()
+
+        class_ids = held.values_list('gym_class_id', flat=True).distinct()
+        classes = GymClass.objects.filter(id__in=class_ids).values('id', 'name', 'category')
+
+        return Response({
+            'id': trainer.id,
+            'full_name': trainer.user.full_name,
+            'specialization': trainer.specialization,
+            'bio': trainer.bio,
+            'bio_html': trainer.bio_html,
+            'photo': trainer.photo.url if trainer.photo else None,
+            'experience_years': trainer.experience_years,
+            'stats': {
+                'sessions_held': held.count(),
+                'students_taught': students_taught,
+                'active_students': active_students,
+                'total_check_ins': Attendance.objects.filter(session__trainer=trainer).count(),
+                'classes_taught': len(classes),
+            },
+            'classes': list(classes),
+            'upcoming_sessions': [
+                {
+                    'id': s.id,
+                    'gym_class': s.gym_class.name,
+                    'gym_class_id': s.gym_class_id,
+                    'session_date': s.session_date,
+                    'start_time': s.start_time,
+                    'capacity': s.capacity,
+                    'booked': s.booked,
+                }
+                for s in upcoming
+            ],
+        })
+
+
+class MemberPublicProfileView(APIView):
+    """A member's profile as other members see it.
+
+    `is_profile_public` gates the ACTIVITY, not the existence of the person:
+    a private profile still returns the name and tier so leaderboards and
+    mentions keep working, but the classes they attend, their streak and
+    their check-in history are withheld. The owner and admins always get
+    the full picture — hiding someone's data from themselves would be
+    surprising, not private.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from django.utils import timezone
+
+        from bookings.models import Attendance
+        from progress.gamification import points_for_member
+
+        org = request.user.organization
+        try:
+            member = Member.objects.select_related('user').get(pk=pk, user__organization=org)
+        except Member.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        viewer_is_owner = request.user.is_member and request.user.member_profile.id == member.id
+        can_see_detail = member.user.is_profile_public or viewer_is_owner or request.user.is_admin_role
+
+        points = points_for_member(member)
+        payload = {
+            'member_id': member.id,
+            'full_name': member.user.full_name,
+            'is_public': member.user.is_profile_public,
+            'is_me': viewer_is_owner,
+            'can_see_detail': can_see_detail,
+            'tier': points['tier'],
+            'tier_emoji': points['tier_emoji'],
+            'member_since': member.created_at.date(),
+        }
+        if not can_see_detail:
+            return Response(payload)
+
+        attendances = (
+            Attendance.objects.filter(member=member)
+            .select_related('session__gym_class', 'session__trainer__user')
+            .order_by('-check_in_time')
+        )
+        recent = attendances[:10]
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        payload.update({
+            'points': points['points'],
+            'stats': {
+                'total_check_ins': attendances.count(),
+                'check_ins_30d': attendances.filter(check_in_time__gte=thirty_days_ago).count(),
+                'classes_tried': attendances.values('session__gym_class_id').distinct().count(),
+            },
+            'recent_classes': [
+                {
+                    'gym_class': a.session.gym_class.name,
+                    'trainer_name': a.session.trainer.user.full_name,
+                    'date': a.check_in_time.date(),
+                }
+                for a in recent
+            ],
+        })
+        return Response(payload)
 
 
 class MemberListView(generics.ListAPIView):

@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import MembershipPlan, Payment, Subscription
+from .models import LeaderboardReward, MembershipPlan, Payment, Subscription
 
 
 class MembershipPlanSerializer(serializers.ModelSerializer):
@@ -87,3 +87,10 @@ class SubscribeSerializer(serializers.Serializer):
     """Input for the subscribe endpoint: just the chosen plan id."""
 
     plan = serializers.PrimaryKeyRelatedField(queryset=MembershipPlan.objects.filter(is_active=True))
+
+
+class LeaderboardRewardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaderboardReward
+        fields = ('id', 'rank', 'percent', 'is_redeemed', 'granted_at', 'redeemed_at')
+        read_only_fields = fields

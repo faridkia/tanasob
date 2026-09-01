@@ -14,14 +14,15 @@ from rest_framework.views import APIView
 
 from common.permissions import IsAdmin, IsMember
 
-from .models import MembershipPlan, Payment, Subscription
+from .models import LeaderboardReward, MembershipPlan, Payment, Subscription
 from .serializers import (
+    LeaderboardRewardSerializer,
     MembershipPlanSerializer,
     PaymentSerializer,
     SubscribeSerializer,
     SubscriptionSerializer,
 )
-from .services import cancel_subscription, expire_due_subscriptions, purchase_subscription
+from .services import cancel_subscription, discount_for, expire_due_subscriptions, purchase_subscription
 
 
 class MembershipPlanListCreateView(generics.ListCreateAPIView):
@@ -119,6 +120,38 @@ class MyPaymentsView(generics.ListAPIView):
         return Payment.objects.filter(
             subscription__member=self.request.user.member_profile
         )
+
+
+class MyDiscountView(APIView):
+    """What the member will actually pay, and why — so the plans page can
+    show the real price instead of the sticker one."""
+
+    permission_classes = [IsMember]
+
+    LABELS = {
+        'tier': 'تخفیف سطح عضویت',
+        'reward': 'جایزه نفرات برتر',
+        'residual': 'تخفیف دائمی بابت رتبه قبلی',
+    }
+
+    def get(self, request):
+        member = request.user.member_profile
+        percent, source, _ = discount_for(member)
+        return Response({
+            'percent': percent,
+            'source': source,
+            'label': self.LABELS.get(source, ''),
+        })
+
+
+class MyLeaderboardRewardsView(generics.ListAPIView):
+    """Member views their own leaderboard rewards (redeemed and not)."""
+
+    serializer_class = LeaderboardRewardSerializer
+    permission_classes = [IsMember]
+
+    def get_queryset(self):
+        return LeaderboardReward.objects.filter(member=self.request.user.member_profile)
 
 
 class AdminSubscriptionListView(generics.ListAPIView):

@@ -10,4 +10,5 @@ urlpatterns = [
     path('reports/attendance/', views.AttendanceReportView.as_view(), name='report-attendance'),
     path('reports/popular/', views.PopularReportView.as_view(), name='report-popular'),
     path('reports/trends/', views.AnalyticsTrendView.as_view(), name='report-trends'),
+    path('reports/overview/', views.AnalyticsOverviewView.as_view(), name='report-overview'),
 ]

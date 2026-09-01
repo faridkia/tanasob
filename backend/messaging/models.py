@@ -21,6 +21,10 @@ class Message(models.Model):
     )
     content = models.TextField()
     sent_at = models.DateTimeField(auto_now_add=True)
+    # Set only when the sender edits the text. Kept so the UI can mark a
+    # message as edited rather than silently rewriting history for the
+    # person who already read it.
+    edited_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
 
     class Meta:

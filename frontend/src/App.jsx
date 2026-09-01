@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   Activity, Award, ArrowLeft, Bell, Bot, Building2, CalendarDays, CalendarRange, Camera, Check, CheckCircle2,
   ChevronLeft, ChevronRight, CircleUserRound, ClipboardList, CreditCard, Dumbbell, Edit2, Flame, HeartPulse,
-  ImagePlus, Link2, LayoutDashboard, LogOut, MapPin, MessageCircle, Moon, Play, Plus, QrCode, RotateCcw, Salad,
+  Globe, ImagePlus, Link2, LayoutDashboard, LogOut, MapPin, MessageCircle, Moon, Newspaper, Play, Plus, QrCode, RotateCcw, Salad,
   ScanLine, Search, Send, Settings, ShieldCheck, SkipForward, Sparkles, Sun, Target, Timer, Trash2, Trophy,
   UserCheck, UserPlus, UserX, Users, Video, X,
 } from 'lucide-react'
-import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import jsQR from 'jsqr'
 import { AnimatePresence, motion } from 'framer-motion'
 import Model from 'react-body-highlighter'
@@ -18,6 +19,85 @@ import {
 import api, { errorMessage, getItems } from './api'
 import gymLoginImage from './assets/gym-login.png'
 import landingImage from './assets/landingimage.png'
+
+// ---- i18n ----
+// A from-scratch translation layer: rather than rewriting every JSX call
+// site to use abstract keys, t(fa) looks the existing Persian string up in
+// a fa->en dictionary and falls back to the Persian itself when there's no
+// entry yet (or when lang is 'fa') — so pages translate incrementally
+// without ever showing a raw key or breaking untranslated ones.
+const EN_TRANSLATIONS = {
+  'تناسب': 'Tanasob',
+  // Landing page
+  'خانه': 'Home', 'درباره ما': 'About', 'خدمات': 'Services', 'برنامه‌ها': 'Programs', 'تماس با ما': 'Contact',
+  'ورود / ثبت‌نام': 'Log in / Sign up',
+  'باشگاه ورزشی تناسب': 'Tanasob Sports Club',
+  'بهترین نسخه': 'The best version', 'خودت باش': 'of yourself',
+  'محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.':
+    'A professional space, experienced trainers, and workout plans built around your goals. We\'re here to help you live stronger, healthier, more energized.',
+  'شروع کن': 'Get started', 'تماشای معرفی باشگاه': 'Watch the intro',
+  'صاحب باشگاهی؟ باشگاه خودت را در تناسب ثبت کن': 'Own a gym? Register it on Tanasob',
+  'چرا تناسب؟': 'Why Tanasob?', 'همه چیز برای رسیدن به هدف تو': 'Everything to reach your goal',
+  'نتایج واقعی': 'Real results', 'برنامه‌های علمی و اصولی برای رسیدن به بهترین نتیجه': 'Science-based programs built for real results',
+  'مربیان حرفه‌ای': 'Professional trainers', 'مربیان باتجربه و دارای معتبرترین مدارک بین‌المللی': 'Experienced trainers with recognized international certifications',
+  'برنامه شخصی‌سازی شده': 'Personalized plans', 'برنامه تمرینی و غذایی متناسب با هدف و شرایط بدنی تو': 'Workout and diet plans tailored to your goals and body',
+  'تجهیزات به‌روز': 'Modern equipment', 'مدرن‌ترین دستگاه‌ها و محیطی استاندارد و تمیز': 'The latest machines in a clean, standard-compliant space',
+  // Auth pages
+  'باشگاه هوشمند شما': 'Your smart gym', 'پلتفرم مدیریت باشگاه‌های ورزشی': 'A management platform for sports gyms',
+  'ساخت حساب کاربری': 'Create an account', 'ورود به حساب': 'Log in',
+  'اطلاعات خود را وارد کنید.': 'Enter your details.', 'ایمیل و رمز عبور خود را وارد کنید.': 'Enter your email and password.',
+  'نام و نام خانوادگی': 'Full name', 'شماره تماس': 'Phone number', 'ایمیل': 'Email', 'رمز عبور': 'Password',
+  'تکرار رمز عبور': 'Confirm password', 'باشگاه': 'Gym', 'انتخاب باشگاه': 'Select a gym',
+  'نوع حساب': 'Account type', 'عضو باشگاه': 'Member', 'مربی': 'Trainer',
+  'لطفاً صبر کنید...': 'Please wait...', 'ساخت حساب': 'Create account', 'ورود به تناسب': 'Log in to Tanasob',
+  'حساب داری؟ وارد شو': 'Already have an account? Log in', 'حساب نداری؟ ثبت‌نام کن': "Don't have an account? Sign up",
+  'می‌خوای باشگاه خودتو ثبت کنی؟': 'Want to register your own gym?',
+  'ثبت باشگاه جدید': 'Register a new gym', 'باشگاه خودت را راه‌اندازی کن': 'Launch your own gym',
+  'یک فضای کاملاً مستقل برای باشگاهت با اولین حساب مدیر بساز.': 'Create a fully independent space for your gym, with its first admin account.',
+  'نام باشگاه': 'Gym name', 'آدرس': 'Address', 'تلفن باشگاه': 'Gym phone',
+  'نام و نام خانوادگی مدیر': "Admin's full name", 'ایمیل مدیر': "Admin's email",
+  'ساخت باشگاه': 'Create gym', 'عضو یک باشگاه موجودی؟ ثبت‌نام معمولی': 'Already part of a gym? Regular sign-up',
+  // Sidebar / nav
+  'کلاس‌ها': 'Classes', 'اشتراک من': 'My subscription', 'کارت عضویت': 'Membership card', 'پیشرفت بدن': 'Body progress',
+  'برنامه‌سازی': 'Plan builder', 'تقویم من': 'My calendar', 'گفت‌وگوها': 'Messages',
+  'رویدادها': 'Events', 'مسابقات': 'Competitions', 'جدول امتیازات': 'Leaderboard', 'وبلاگ': 'Blog',
+  'کتابخانه حرکات': 'Exercise library', 'پنل مربی': 'Trainer panel', 'مدیریت باشگاه': 'Admin panel',
+  'اعلان‌ها': 'Notifications', 'پروفایل': 'Profile', 'خروج از حساب': 'Log out', 'سلام،': 'Hi,',
+  // Dashboard
+  'نمای کلی': 'Overview', 'برنامه امروز شما': "Today's plan", 'وضعیت امروز باشگاه': "Today's gym overview",
+  'جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.': 'Sessions, notifications, and active plans at a glance.',
+  'کلاس‌های پیش رو': 'Upcoming classes', 'برنامه‌های فعال': 'Active plans', 'تمرکز امروز': "Today's focus", '۴ جلسه': '4 sessions',
+  'کلاس‌های فعال': 'Active classes', 'اعلان‌های تازه': 'New notifications', 'وضعیت سیستم': 'System status', 'پایدار': 'Stable',
+  'جلسات نزدیک': 'Upcoming sessions', 'جای خالی': 'spots left', 'جلسه‌ای برای نمایش نیست.': 'No sessions to show.',
+  'آخرین اعلان‌ها': 'Latest notifications', 'اعلان تازه‌ای نداری.': "You don't have any new notifications.",
+  'مشاهده همه': 'View all',
+}
+
+function translate(lang, fa) {
+  if (lang !== 'en') return fa
+  return EN_TRANSLATIONS[fa] ?? fa
+}
+
+const LanguageContext = createContext({ lang: 'fa', setLang: () => {}, t: (fa) => fa })
+const useLang = () => useContext(LanguageContext)
+
+function LanguageProvider({ children }) {
+  const [lang, setLangState] = useState(localStorage.getItem('tanasob_lang') || 'fa')
+  useEffect(() => {
+    document.documentElement.lang = lang === 'en' ? 'en' : 'fa'
+    document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl'
+  }, [lang])
+  const setLang = (next) => { localStorage.setItem('tanasob_lang', next); setLangState(next) }
+  const t = (fa) => translate(lang, fa)
+  return <LanguageContext.Provider value={{ lang, setLang, t }}>{children}</LanguageContext.Provider>
+}
+
+function LanguageToggle({ className = 'icon-button lang-toggle-btn' }) {
+  const { lang, setLang } = useLang()
+  return <button className={className} onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')} title={lang === 'fa' ? 'English' : 'فارسی'}>
+    <Globe size={18} /><span className="lang-toggle-label">{lang === 'fa' ? 'EN' : 'FA'}</span>
+  </button>
+}
 
 const roleLabel = { MEMBER: 'عضو', TRAINER: 'مربی', ADMIN: 'مدیر' }
 const formatDate = (value) => value && new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date(value))
@@ -136,6 +216,10 @@ const formatAiText = (text) => (text || '')
   .trim()
 
 function App() {
+  return <LanguageProvider><AppRoutes /></LanguageProvider>
+}
+
+function AppRoutes() {
   const [user, setUser] = useState(null)
   const [ready, setReady] = useState(false)
   const [theme, setTheme] = useState(localStorage.getItem('tanasob_theme') || 'light')
@@ -161,7 +245,8 @@ function App() {
     setUser(null)
   }
 
-  if (!ready) return <div className="boot"><Sparkles /> در حال آماده‌سازی تناسب...</div>
+  const { lang } = useLang()
+  if (!ready) return <div className="boot"><Sparkles /> {lang === 'en' ? 'Preparing Tanasob...' : 'در حال آماده‌سازی تناسب...'}</div>
 
   return (
     <Routes>
@@ -186,38 +271,43 @@ const LANDING_FEATURES = [
 ]
 
 function Landing() {
+  const { t } = useLang()
   return <div className="landing">
     <div className="landing-top">
       <div className="landing-hero-image" style={{ backgroundImage: `url(${landingImage})` }} />
       <header className="landing-nav">
-        <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> ورود / ثبت‌نام</Link>
-        <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{label}</a>)}</nav>
-        <div className="landing-logo"><strong>تناسب</strong><span><Activity size={18} /></span></div>
+        <div className="landing-nav-actions">
+          <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> {t('ورود / ثبت‌نام')}</Link>
+          <LanguageToggle className="landing-lang-toggle" />
+        </div>
+        <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{t(label)}</a>)}</nav>
+        <div className="landing-logo"><strong>{t('تناسب')}</strong><span><Activity size={18} /></span></div>
       </header>
 
       <section className="landing-hero">
         <motion.div className="landing-hero-text" initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .55, ease: 'easeOut' }}>
-          <p className="landing-eyebrow">باشگاه ورزشی تناسب</p>
-          <h1>بهترین نسخه<br /><span>خودت باش</span></h1>
-          <p className="landing-hero-desc">محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.</p>
+          <p className="landing-eyebrow">{t('باشگاه ورزشی تناسب')}</p>
+          <h1>{t('بهترین نسخه')}<br /><span>{t('خودت باش')}</span></h1>
+          <p className="landing-hero-desc">{t('محیطی حرفه‌ای، مربیان مجرب و برنامه‌های تمرینی متناسب با هدف تو. ما کنارتم تا قوی‌تر، سالم‌تر و پرانرژی‌تر زندگی کنی.')}</p>
           <div className="landing-cta-row">
-            <motion.div whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Link to="/register" className="landing-btn landing-btn-primary">شروع کن <ArrowLeft size={18} /></Link></motion.div>
-            <motion.button className="landing-btn landing-btn-ghost" whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Play size={15} /> تماشای معرفی باشگاه</motion.button>
+            <motion.div whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Link to="/register" className="landing-btn landing-btn-primary">{t('شروع کن')} <ArrowLeft size={18} /></Link></motion.div>
+            <motion.button className="landing-btn landing-btn-ghost" whileTap={{ scale: .96 }} whileHover={{ scale: 1.03 }}><Play size={15} /> {t('تماشای معرفی باشگاه')}</motion.button>
           </div>
-          <Link to="/register-gym" className="landing-gym-cta"><Building2 size={15} /> صاحب باشگاهی؟ باشگاه خودت را در تناسب ثبت کن</Link>
+          <Link to="/register-gym" className="landing-gym-cta"><Building2 size={15} /> {t('صاحب باشگاهی؟ باشگاه خودت را در تناسب ثبت کن')}</Link>
         </motion.div>
       </section>
     </div>
 
     <section className="landing-features">
-      <p className="landing-eyebrow center">چرا تناسب؟</p>
-      <h2>همه چیز برای رسیدن به هدف تو</h2>
-      <div className="landing-features-grid">{LANDING_FEATURES.map(({ icon: Icon, title, text }, i) => <motion.div className="landing-feature" key={title} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: .4, delay: i * .08 }}><span><Icon size={22} /></span><strong>{title}</strong><p>{text}</p></motion.div>)}</div>
+      <p className="landing-eyebrow center">{t('چرا تناسب؟')}</p>
+      <h2>{t('همه چیز برای رسیدن به هدف تو')}</h2>
+      <div className="landing-features-grid">{LANDING_FEATURES.map(({ icon: Icon, title, text }, i) => <motion.div className="landing-feature" key={title} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-40px' }} transition={{ duration: .4, delay: i * .08 }}><span><Icon size={22} /></span><strong>{t(title)}</strong><p>{t(text)}</p></motion.div>)}</div>
     </section>
   </div>
 }
 
 function AuthPage({ register, onLogin }) {
+  const { t } = useLang()
   const [form, setForm] = useState({ email: '', password: '', password2: '', full_name: '', phone: '', role: 'MEMBER', organization: '' })
   const [organizations, setOrganizations] = useState([])
   const [error, setError] = useState('')
@@ -238,29 +328,29 @@ function AuthPage({ register, onLogin }) {
   return (
     <main className="auth-page">
       <section className="auth-intro" style={{ backgroundImage: `url(${gymLoginImage})` }}>
-        <div className="auth-tagline"><h1>تناسب</h1><p>باشگاه هوشمند شما</p></div>
+        <div className="auth-tagline"><h1>{t('تناسب')}</h1><p>{t('باشگاه هوشمند شما')}</p></div>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
-          <div className="brand-line"><Activity /> <strong>تناسب</strong></div>
-          <h2>{register ? 'ساخت حساب کاربری' : 'ورود به حساب'}</h2>
-          <p>{register ? 'اطلاعات خود را وارد کنید.' : 'ایمیل و رمز عبور خود را وارد کنید.'}</p>
+          <div className="auth-card-top"><div className="brand-line"><Activity /> <strong>{t('تناسب')}</strong></div><LanguageToggle /></div>
+          <h2>{register ? t('ساخت حساب کاربری') : t('ورود به حساب')}</h2>
+          <p>{register ? t('اطلاعات خود را وارد کنید.') : t('ایمیل و رمز عبور خود را وارد کنید.')}</p>
           <form onSubmit={submit} className="form-grid">
-            {register && <><Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
-              <Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} /></>}
-            <Field label="ایمیل" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
-            <Field label="رمز عبور" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
-            {register && <><Field label="تکرار رمز عبور" type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
-              <label>باشگاه<select value={form.organization} onChange={(e) => setForm({ ...form, organization: e.target.value })} required>
-                <option value="">انتخاب باشگاه</option>
+            {register && <><Field label={t('نام و نام خانوادگی')} value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
+              <Field label={t('شماره تماس')} value={form.phone} onChange={(phone) => setForm({ ...form, phone })} /></>}
+            <Field label={t('ایمیل')} type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
+            <Field label={t('رمز عبور')} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
+            {register && <><Field label={t('تکرار رمز عبور')} type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
+              <label>{t('باشگاه')}<select value={form.organization} onChange={(e) => setForm({ ...form, organization: e.target.value })} required>
+                <option value="">{t('انتخاب باشگاه')}</option>
                 {organizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
               </select></label>
-              <label>نوع حساب<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="MEMBER">عضو باشگاه</option><option value="TRAINER">مربی</option></select></label></>}
+              <label>{t('نوع حساب')}<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="MEMBER">{t('عضو باشگاه')}</option><option value="TRAINER">{t('مربی')}</option></select></label></>}
             {error && <p className="form-error">{error}</p>}
-            <button className="button primary" disabled={busy}>{busy ? 'لطفاً صبر کنید...' : register ? 'ساخت حساب' : 'ورود به تناسب'} <ChevronLeft size={18} /></button>
+            <button className="button primary" disabled={busy}>{busy ? t('لطفاً صبر کنید...') : register ? t('ساخت حساب') : t('ورود به تناسب')} <ChevronLeft size={18} /></button>
           </form>
-          <button className="text-button" onClick={() => navigate(register ? '/login' : '/register')}>{register ? 'حساب داری؟ وارد شو' : 'حساب نداری؟ ثبت‌نام کن'}</button>
-          {register && <Link to="/register-gym" className="text-button"><Building2 size={15} /> می‌خوای باشگاه خودتو ثبت کنی؟</Link>}
+          <button className="text-button" onClick={() => navigate(register ? '/login' : '/register')}>{register ? t('حساب داری؟ وارد شو') : t('حساب نداری؟ ثبت‌نام کن')}</button>
+          {register && <Link to="/register-gym" className="text-button"><Building2 size={15} /> {t('می‌خوای باشگاه خودتو ثبت کنی؟')}</Link>}
         </div>
       </section>
     </main>
@@ -268,6 +358,7 @@ function AuthPage({ register, onLogin }) {
 }
 
 function RegisterGymPage({ onLogin }) {
+  const { t } = useLang()
   const [form, setForm] = useState({ name: '', address: '', phone: '', email: '', full_name: '', password: '', password2: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -283,41 +374,97 @@ function RegisterGymPage({ onLogin }) {
   return (
     <main className="auth-page">
       <section className="auth-intro" style={{ backgroundImage: `url(${gymLoginImage})` }}>
-        <div className="auth-tagline"><h1>تناسب</h1><p>پلتفرم مدیریت باشگاه‌های ورزشی</p></div>
+        <div className="auth-tagline"><h1>{t('تناسب')}</h1><p>{t('پلتفرم مدیریت باشگاه‌های ورزشی')}</p></div>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
-          <div className="brand-line"><Building2 /> <strong>ثبت باشگاه جدید</strong></div>
-          <h2>باشگاه خودت را راه‌اندازی کن</h2>
-          <p>یک فضای کاملاً مستقل برای باشگاهت با اولین حساب مدیر بساز.</p>
+          <div className="auth-card-top"><div className="brand-line"><Building2 /> <strong>{t('ثبت باشگاه جدید')}</strong></div><LanguageToggle /></div>
+          <h2>{t('باشگاه خودت را راه‌اندازی کن')}</h2>
+          <p>{t('یک فضای کاملاً مستقل برای باشگاهت با اولین حساب مدیر بساز.')}</p>
           <form onSubmit={submit} className="form-grid">
-            <Field label="نام باشگاه" value={form.name} onChange={(name) => setForm({ ...form, name })} required />
-            <Field label="آدرس" value={form.address} onChange={(address) => setForm({ ...form, address })} />
-            <Field label="تلفن باشگاه" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
-            <Field label="نام و نام خانوادگی مدیر" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
-            <Field label="ایمیل مدیر" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
-            <Field label="رمز عبور" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
-            <Field label="تکرار رمز عبور" type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
+            <Field label={t('نام باشگاه')} value={form.name} onChange={(name) => setForm({ ...form, name })} required />
+            <Field label={t('آدرس')} value={form.address} onChange={(address) => setForm({ ...form, address })} />
+            <Field label={t('تلفن باشگاه')} value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />
+            <Field label={t('نام و نام خانوادگی مدیر')} value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} required />
+            <Field label={t('ایمیل مدیر')} type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} required />
+            <Field label={t('رمز عبور')} type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} required />
+            <Field label={t('تکرار رمز عبور')} type="password" value={form.password2} onChange={(password2) => setForm({ ...form, password2 })} required />
             {error && <p className="form-error">{error}</p>}
-            <button className="button primary" disabled={busy}>{busy ? 'لطفاً صبر کنید...' : 'ساخت باشگاه'} <ChevronLeft size={18} /></button>
+            <button className="button primary" disabled={busy}>{busy ? t('لطفاً صبر کنید...') : t('ساخت باشگاه')} <ChevronLeft size={18} /></button>
           </form>
-          <button className="text-button" onClick={() => navigate('/register')}>عضو یک باشگاه موجودی؟ ثبت‌نام معمولی</button>
+          <button className="text-button" onClick={() => navigate('/register')}>{t('عضو یک باشگاه موجودی؟ ثبت‌نام معمولی')}</button>
         </div>
       </section>
     </main>
   )
 }
 
+/** Switches the theme as a circular wipe that grows out of the button you
+ *  actually pressed, using the View Transitions API.
+ *
+ *  The whole thing degrades to a plain instant switch when the browser has
+ *  no startViewTransition (Firefox, older Safari) or when the user asked
+ *  for reduced motion — a full-screen wipe is exactly the kind of movement
+ *  that setting exists to suppress. */
+function useThemeTransition(theme, setTheme) {
+  return (event) => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!document.startViewTransition || reduced) return setTheme(next)
+
+    // Origin = the button's centre, so the new theme appears to pour out of
+    // the thing the user touched.
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = rect.left + rect.width / 2
+    const y = rect.top + rect.height / 2
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
+
+    document.documentElement.style.setProperty('--theme-x', `${x}px`)
+    document.documentElement.style.setProperty('--theme-y', `${y}px`)
+    document.documentElement.style.setProperty('--theme-r', `${radius}px`)
+
+    const transition = document.startViewTransition(() => {
+      flushSync(() => setTheme(next))
+    })
+    transition.ready.then(() => {
+      // Two coordinated animations, not one. Growing only the new layer
+      // leaves the OLD snapshot at full opacity underneath for the whole
+      // sweep and then cutting it dead at the end — which is the "snap"
+      // halfway through. Fading the old layer out over the same curve makes
+      // the wipe read as continuous.
+      const easing = 'cubic-bezier(.32,.72,.34,1)'
+      const duration = 620
+      document.documentElement.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration, easing, pseudoElement: '::view-transition-new(root)' },
+      )
+      document.documentElement.animate(
+        { opacity: [1, 1, 0] , offset: undefined },
+        { duration, easing, pseudoElement: '::view-transition-old(root)' },
+      )
+    })
+  }
+}
+
 function Shell({ user, setUser, logout, theme, setTheme }) {
+  const { t } = useLang()
+  const toggleTheme = useThemeTransition(theme, setTheme)
   const member = user.role === 'MEMBER', trainer = user.role === 'TRAINER', admin = user.role === 'ADMIN'
   const nav = [
     ['/', 'خانه', LayoutDashboard],
+    // Second on purpose: the mobile bar only shows the first five, and the
+    // calendar is the surface a member opens the app for.
+    ...(!admin ? [['/calendar', trainer ? 'برنامه‌سازی' : 'تقویم من', ClipboardList]] : []),
     ['/classes', 'کلاس‌ها', CalendarDays],
-    ...(member ? [['/membership', 'اشتراک من', CreditCard], ['/card', 'کارت عضویت', QrCode], ['/progress', 'پیشرفت بدن', Activity]] : []),
-    ...(!admin ? [['/plans', trainer ? 'برنامه‌سازی' : 'برنامه‌های من', ClipboardList], ['/messages', 'گفت‌وگوها', MessageCircle]] : []),
+    ...(member ? [['/goals', 'اهداف من', Target], ['/membership', 'اشتراک من', CreditCard], ['/card', 'کارت عضویت', QrCode], ['/progress', 'پیشرفت بدن', Activity]] : []),
+    ...(!admin ? [['/messages', 'گفت‌وگوها', MessageCircle]] : []),
     ['/events', 'رویدادها', CalendarRange],
     ['/competitions', 'مسابقات', Trophy],
-    ['/leaderboard', 'جدول امتیازات', Award],
+    ['/trainers', 'مربیان', Users],
+    ['/blog', 'وبلاگ', Newspaper],
+    // Tiers, points and plan discounts only ever apply to members — a
+    // trainer has no subscription to discount and no rank to earn.
+    ...(member || admin ? [['/leaderboard', 'جدول امتیازات', Award]] : []),
     ...(trainer || admin ? [['/exercises', 'کتابخانه حرکات', Dumbbell]] : []),
     ...(trainer ? [['/trainer', 'پنل مربی', Users]] : []),
     ...(admin ? [['/admin', 'مدیریت باشگاه', ShieldCheck]] : []),
@@ -327,26 +474,38 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo"><span><Activity /></span><strong>{user.organization?.name || 'تناسب'}</strong></div>
-        <nav>{nav.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} />{label}</NavLink>)}</nav>
-        <button className="sidebar-bottom" onClick={logout}><LogOut size={18} /> خروج از حساب</button>
+        <div className="logo"><span><Activity /></span><strong>{user.organization?.name || t('تناسب')}</strong></div>
+        <nav>{nav.map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={20} />{t(label)}</NavLink>)}</nav>
+        <button className="sidebar-bottom" onClick={logout}><LogOut size={18} /> {t('خروج از حساب')}</button>
       </aside>
-      <div className="mobile-nav">{nav.slice(0, 5).map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={18} /><span>{label}</span></NavLink>)}</div>
+      <div className="mobile-nav">{nav.slice(0, 5).map(([to, label, Icon]) => <NavLink key={to} to={to} end={to === '/'}><Icon size={18} /><span>{t(label)}</span></NavLink>)}</div>
       <main className="workspace">
-        <header className="topbar"><div><h1>سلام، {user.full_name?.split(' ')[0]} 👋</h1></div><div className="top-actions"><button className="icon-button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button><NavLink className="icon-button" to="/notifications"><Bell size={19} /></NavLink></div></header>
+        <header className="topbar"><div><h1>{t('سلام،')} {user.full_name?.split(' ')[0]} 👋</h1></div><div className="top-actions"><LanguageToggle /><button className="icon-button" onClick={toggleTheme} title={theme === 'dark' ? 'حالت روشن' : 'حالت تاریک'}>{theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}</button><NavLink className="icon-button" to="/notifications"><Bell size={19} /></NavLink></div></header>
         <PageTransition>
           <Routes>
             <Route path="/" element={<Dashboard user={user} />} />
             <Route path="/membership" element={member ? <Memberships /> : <Navigate to="/" />} />
             <Route path="/card" element={member ? <MembershipCard user={user} /> : <Navigate to="/" />} />
             <Route path="/classes" element={<Classes user={user} />} />
-            <Route path="/plans" element={!admin ? <Plans user={user} /> : <Navigate to="/" />} />
+            <Route path="/classes/:id" element={<ClassDetailPage user={user} />} />
+            <Route path="/trainers" element={<TrainersPage />} />
+            <Route path="/trainers/:id" element={<TrainerProfilePage user={user} />} />
+            <Route path="/u/:id" element={<MemberProfilePage />} />
+            <Route path="/calendar" element={admin ? <Navigate to="/" /> : trainer ? <TrainerPlans user={user} /> : <MyCalendarPage user={user} />} />
+            {/* The page was called "برنامه‌های من" at /plans before it became a
+                calendar; keep old links and bookmarks working. */}
+            <Route path="/plans" element={<Navigate to="/calendar" replace />} />
+            <Route path="/workout/:planId/:dayId" element={member ? <WorkoutRunPage /> : <Navigate to="/" />} />
+            <Route path="/walk" element={member ? <WalkPage /> : <Navigate to="/" />} />
             <Route path="/progress" element={member ? <Progress /> : <Navigate to="/" />} />
+            <Route path="/goals" element={member ? <GoalsPage /> : <Navigate to="/" />} />
             <Route path="/messages" element={!admin ? <Messages user={user} /> : <Navigate to="/" />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/notifications" element={<Notifications user={user} />} />
+            <Route path="/leaderboard" element={<Leaderboard user={user} />} />
             <Route path="/events" element={<EventsPage user={user} />} />
             <Route path="/competitions" element={<Competitions user={user} />} />
+            <Route path="/blog" element={<BlogPage user={user} />} />
+            <Route path="/blog/:slug" element={<BlogPostDetail user={user} />} />
             <Route path="/exercises" element={(trainer || admin) ? <ExerciseLibrary /> : <Navigate to="/" />} />
             <Route path="/trainer" element={trainer ? <TrainerPanel /> : <Navigate to="/" />} />
             <Route path="/admin" element={admin ? <AdminPanel /> : <Navigate to="/" />} />
@@ -428,10 +587,15 @@ function AssistantWidget() {
 }
 
 function Dashboard({ user }) {
+  const { t } = useLang()
   const [data, setData] = useState({ sessions: [], plans: [], notices: [] })
   const [points, setPoints] = useState(null)
   const [goals, setGoals] = useState(null)
   const [calorieSummary, setCalorieSummary] = useState(null)
+  const [coach, setCoach] = useState(null)
+  // "تمرکز امروز: ۴ جلسه" used to be a hardcoded string — it showed 4 to
+  // every trainer, always. Replaced with their real active-student count.
+  const [trainerStudents, setTrainerStudents] = useState(0)
   const [events, setEvents] = useState([])
   useEffect(() => {
     Promise.all([api.get('/sessions/'), api.get('/notifications/'), ...(user.role !== 'ADMIN' ? [api.get('/workout-plans/')] : [])]).then((responses) => setData({
@@ -441,58 +605,245 @@ function Dashboard({ user }) {
       api.get('/progress/me/points/').then(({ data }) => setPoints(data)).catch(() => {})
       api.get('/progress/me/goals/').then(({ data }) => setGoals(data)).catch(() => {})
       api.get('/activities/summary/').then(({ data }) => setCalorieSummary(data)).catch(() => {})
+      api.get('/progress/me/coach/').then(({ data }) => setCoach(data)).catch(() => {})
+    }
+    if (user.role === 'TRAINER') {
+      api.get('/auth/assignments/').then(({ data }) => setTrainerStudents(getItems(data).filter((a) => a.status === 'ACTIVE').length)).catch(() => {})
     }
     api.get('/events/').then(({ data }) => setEvents(getItems(data).filter((e) => e.days_remaining >= 0).slice(0, 5))).catch(() => {})
   }, [user.role])
-  const metrics = user.role === 'MEMBER' ? [['کلاس‌های پیش رو', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple']] : user.role === 'TRAINER' ? [['جلسات این هفته', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple'], ['تمرکز امروز', '۴ جلسه', Dumbbell, 'orange']] : [['کلاس‌های فعال', data.sessions.length, CalendarDays, 'blue'], ['اعلان‌های تازه', data.notices.length, Bell, 'pink'], ['وضعیت سیستم', 'پایدار', ShieldCheck, 'green']]
+  const metrics = user.role === 'MEMBER' ? [['کلاس‌های پیش رو', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple']] : user.role === 'TRAINER' ? [['جلسات این هفته', data.sessions.length, CalendarDays, 'blue'], ['برنامه‌های فعال', data.plans.length, ClipboardList, 'purple'], ['شاگردان من', trainerStudents, Users, 'orange']] : [['کلاس‌های فعال', data.sessions.length, CalendarDays, 'blue'], ['اعلان‌های تازه', data.notices.length, Bell, 'pink'], ['وضعیت سیستم', 'پایدار', ShieldCheck, 'green']]
   return <section className="page-stack">
     {events.length ? <EventHeroSlider events={events} /> : (
-      <motion.section className="hero-card " initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .4 }}><div><p className="eyebrow">نمای کلی</p><h2>{user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه'}</h2><p>جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></motion.section>
+      <motion.section className="hero-card " initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .4 }}><div><p className="eyebrow">{t('نمای کلی')}</p><h2>{t(user.role === 'MEMBER' ? 'برنامه امروز شما' : 'وضعیت امروز باشگاه')}</h2><p>{t('جلسات، اعلان‌ها و برنامه‌های فعال در یک نگاه.')}</p></div><div className="hero-graphic"><Dumbbell size={45} /></div></motion.section>
     )}
-    <section className="metric-grid">{metrics.map(([label, value, Icon, color], i) => <motion.article className={`metric-card metric-card--${color}`} key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .06 }}><span className="icon-chip on-tile"><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></motion.article>)}</section>
+    <section className="metric-grid">{metrics.map(([label, value, Icon, color], i) => <motion.article className={`metric-card metric-card--${color}`} key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .06 }}><span className="icon-chip on-tile"><Icon size={20} /></span><p>{t(label)}</p><strong>{value}</strong></motion.article>)}</section>
+    {coach && <CoachCard data={coach} />}
+    {user.role === 'MEMBER' && <TodayCard plans={data.plans} />}
     {points && <PointsCard points={points} />}
-    {goals && <GoalsCard goals={goals} />}
+    {goals && <GoalsCard goals={goals} burnedToday={calorieSummary?.today_calories} />}
     {calorieSummary && <CaloriesBurnedCard summary={calorieSummary} />}
-    <section className="content-grid"><Card title="جلسات نزدیک" action="/classes">{data.sessions.length ? data.sessions.map((session) => <div className="list-row" key={session.id}><div className="date-chip"><b>{formatDate(session.session_date)}</b></div><div><strong>{session.gym_class_name}</strong><small>{session.trainer_name} · {session.start_time?.slice(0, 5)}</small></div>{user.role !== 'MEMBER' && <span className="capacity">{session.remaining_capacity} جای خالی</span>}</div>) : <Empty text="جلسه‌ای برای نمایش نیست." />}</Card><Card title="آخرین اعلان‌ها" action="/notifications">{data.notices.length ? data.notices.map((notice) => <div className="list-row" key={notice.id}><span className="notice-dot" /><div><strong>{notice.title}</strong><small>{notice.message}</small></div></div>) : <Empty text="اعلان تازه‌ای نداری." />}</Card></section></section>
+    <section className="content-grid"><Card title={t('جلسات نزدیک')} action="/classes">{data.sessions.length ? data.sessions.map((session) => <div className="list-row" key={session.id}><div className="date-chip"><b>{formatDate(session.session_date)}</b></div><div><strong>{session.gym_class_name}</strong><small>{session.trainer_name} · {session.start_time?.slice(0, 5)}</small></div>{user.role !== 'MEMBER' && <span className="capacity">{session.remaining_capacity} {t('جای خالی')}</span>}</div>) : <Empty text={t('جلسه‌ای برای نمایش نیست.')} />}</Card><Card title={t('آخرین اعلان‌ها')} action="/notifications">{data.notices.length ? data.notices.map((notice) => <div className="list-row" key={notice.id}><span className="notice-dot" /><div><strong>{notice.title}</strong><small>{notice.message}</small></div></div>) : <Empty text={t('اعلان تازه‌ای نداری.')} />}</Card></section></section>
+}
+
+const COACH_ICONS = { trophy: Trophy, card: CreditCard, flame: Flame, award: Award, target: Target, check: CheckCircle2 }
+
+/** The daily nudge + checklist.
+ *
+ *  Nothing here is a stored to-do: the server derives each task from real
+ *  records, so an item ticks itself the moment you actually do the thing.
+ *  That's why the boxes are read-only — pressing one would be pretending. */
+function CoachCard({ data }) {
+  const navigate = useNavigate()
+  const top = data.suggestions?.[0]
+  const Icon = top ? (COACH_ICONS[top.icon] || Target) : Target
+
+  return <motion.section className="coach-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, delay: .05 }}>
+    {top && (
+      <div className={`coach-nudge tone-${top.tone}`}>
+        <span className="coach-nudge-icon"><Icon size={20} /></span>
+        {/* The server builds these strings with Python's own numerals, so
+            the digits are Latin by the time they arrive. Convert on render
+            rather than in the backend — keeps the API locale-neutral and
+            matches every other number in the UI. */}
+        <p>{toPersianDigits(top.text)}</p>
+        {top.action && <button className="button muted" onClick={() => navigate(top.action)}>{top.action_label}</button>}
+      </div>
+    )}
+
+    <div className="coach-tasks">
+      <div className="coach-tasks-head">
+        <p className="eyebrow">کارهای امروز</p>
+        <span className="coach-progress-label">{toPersianDigits(data.done)} از {toPersianDigits(data.total)}</span>
+      </div>
+      <div className="coach-progress"><motion.div initial={{ width: 0 }} animate={{ width: `${data.percent}%` }} transition={{ duration: .6, ease: 'easeOut' }} /></div>
+      <div className="coach-task-list">
+        {data.tasks.map((task) => (
+          <button className={`coach-task ${task.done ? 'done' : ''}`} key={task.key} onClick={() => task.action && navigate(task.action)}>
+            <span className="coach-task-box">{task.done && <Check size={13} />}</span>
+            <span className="coach-task-body"><strong>{toPersianDigits(task.label)}</strong><small>{toPersianDigits(task.hint)}</small></span>
+            {!task.done && <ChevronLeft size={15} />}
+          </button>
+        ))}
+      </div>
+    </div>
+  </motion.section>
+}
+
+/** The dashboard's "get moving" card: today's workout straight from the
+ * member's plan, one tap from actually running it, plus the shortcuts to
+ * the full calendar and a walk. Deliberately sits directly under the stat
+ * tiles — this is the thing a member opens the app to do. */
+function TodayCard({ plans }) {
+  const navigate = useNavigate()
+  const today = todayIso()
+  const match = plans
+    .filter((p) => !p.is_archived)
+    .flatMap((plan) => (plan.days || []).map((day) => ({ plan, day })))
+    .find(({ day }) => day.date === today)
+
+  return <motion.section className="today-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, delay: .08 }}>
+    <div className="today-card-main">
+      <p className="eyebrow">تمرین امروز</p>
+      {match ? (
+        <>
+          <h3>{match.day.label || 'برنامه امروز آماده است'}</h3>
+          <p className="today-card-sub">{toPersianDigits(match.day.items.length)} حرکت · {match.plan.title}</p>
+          <div className="today-card-exercises">
+            {match.day.items.slice(0, 4).map((it) => <span key={it.id}>{it.exercise_name}</span>)}
+            {match.day.items.length > 4 && <span className="more">+{toPersianDigits(match.day.items.length - 4)}</span>}
+          </div>
+        </>
+      ) : (
+        <>
+          <h3>امروز تمرینی ثبت نشده</h3>
+          <p className="today-card-sub">می‌تونی تقویمت رو ببینی یا یه پیاده‌روی بزنی.</p>
+        </>
+      )}
+    </div>
+    <div className="today-card-actions">
+      {match && <button className="button primary" onClick={() => navigate(`/workout/${match.plan.id}/${match.day.id}`)}><Play size={16} /> شروع تمرین</button>}
+      <button className="button muted" onClick={() => navigate('/calendar')}><CalendarDays size={16} /> تقویم من</button>
+      <button className="button muted" onClick={() => navigate('/walk')}><MapPin size={16} /> پیاده‌روی</button>
+    </div>
+  </motion.section>
 }
 
 /** Weekly/monthly attendance goals (real Attendance counts vs a sensible
  * fixed target) plus today's calorie target pulled from the member's diet
  * plan — three radial gauges, one row. */
-function GoalsCard({ goals }) {
-  const ring = (value, target) => {
-    const pct = target ? Math.min(100, Math.round((value / target) * 100)) : 0
-    const r = 30, c = 2 * Math.PI * r
-    return { pct, r, c, offset: c - (pct / 100) * c }
-  }
-  const weekly = ring(goals.weekly.count, goals.weekly.target)
-  const monthly = ring(goals.monthly.count, goals.monthly.target)
 
-  return <Card title="اهداف من">
-    <div className="goals-grid">
-      <div className="goal-gauge">
-        <svg viewBox="0 0 70 70">
-          <circle className="goal-gauge-track" cx="35" cy="35" r={weekly.r} />
-          <motion.circle className="goal-gauge-fill goal-gauge-fill--blue" cx="35" cy="35" r={weekly.r}
-            strokeDasharray={weekly.c} initial={{ strokeDashoffset: weekly.c }} animate={{ strokeDashoffset: weekly.offset }} transition={{ duration: .8, ease: 'easeOut' }} />
-        </svg>
-        <div className="goal-gauge-label"><strong>{goals.weekly.count}</strong><small>از {goals.weekly.target}</small></div>
-        <p><Target size={13} /> هدف هفتگی</p>
-      </div>
-      <div className="goal-gauge">
-        <svg viewBox="0 0 70 70">
-          <circle className="goal-gauge-track" cx="35" cy="35" r={monthly.r} />
-          <motion.circle className="goal-gauge-fill goal-gauge-fill--purple" cx="35" cy="35" r={monthly.r}
-            strokeDasharray={monthly.c} initial={{ strokeDashoffset: monthly.c }} animate={{ strokeDashoffset: monthly.offset }} transition={{ duration: .8, ease: 'easeOut', delay: .1 }} />
-        </svg>
-        <div className="goal-gauge-label"><strong>{goals.monthly.count}</strong><small>از {goals.monthly.target}</small></div>
-        <p><Target size={13} /> هدف ماهانه</p>
-      </div>
-      <div className="goal-calorie">
-        <span className="icon-chip on-tile"><Flame size={20} /></span>
-        <div><strong>{new Intl.NumberFormat('fa-IR').format(goals.calorie_target)}</strong><small>کالری هدف روزانه</small></div>
-      </div>
+/** The member's own goals page: set the targets, see progress against them.
+ *
+ *  The targets used to be constants shared by every member — the same four
+ *  sessions a week for someone training twice and someone training six
+ *  times. These are theirs. */
+function GoalsPage() {
+  const [goals, setGoals] = useState(null)
+  const [settings, setSettings] = useState(null)
+  const [summary, setSummary] = useState(null)
+  const [points, setPoints] = useState(null)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = () => Promise.all([
+    api.get('/progress/me/goals/'), api.get('/progress/me/goal-settings/'),
+    api.get('/activities/summary/'), api.get('/progress/me/points/'),
+  ]).then(([g, s, a, p]) => { setGoals(g.data); setSettings(s.data); setSummary(a.data); setPoints(p.data) })
+    .catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [])
+
+  const save = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await api.patch('/progress/me/goal-settings/', settings)
+      setMessage('اهداف ذخیره شد.')
+      load()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  if (!goals || !settings) return <section className="page-stack"><Message text={message} />{!message && <Empty text="در حال بارگذاری..." />}</section>
+
+  const set = (patch) => setSettings({ ...settings, ...patch })
+  const ring = (value, target, tone) => {
+    const pct = target ? Math.min(100, Math.round((value / target) * 100)) : 0
+    const r = 42, c = 2 * Math.PI * r
+    return { pct, r, c, offset: c - (pct / 100) * c, tone }
+  }
+  const cards = [
+    { label: 'هدف هفتگی', unit: 'جلسه', ...ring(goals.weekly.count, goals.weekly.target, 'glaze'), value: goals.weekly.count, target: goals.weekly.target },
+    { label: 'هدف ماهانه', unit: 'جلسه', ...ring(goals.monthly.count, goals.monthly.target, 'plum'), value: goals.monthly.count, target: goals.monthly.target },
+    { label: 'کالری امروز', unit: 'کالری', ...ring(summary?.today_calories || 0, goals.burn_target, 'saffron'), value: summary?.today_calories || 0, target: goals.burn_target },
+  ]
+
+  return <section className="page-stack">
+    <PageTitle title="اهداف من" text="هدف‌هایت را خودت تعیین کن و پیشرفتت را دنبال کن." />
+    <Message text={message} />
+
+    <div className="goal-ring-grid">
+      {cards.map((c) => (
+        <div className={`goal-ring-card tone-${c.tone}`} key={c.label}>
+          <svg viewBox="0 0 100 100">
+            <circle className="goal-ring-track" cx="50" cy="50" r={c.r} />
+            <motion.circle className="goal-ring-fill" cx="50" cy="50" r={c.r}
+              strokeDasharray={c.c} initial={{ strokeDashoffset: c.c }} animate={{ strokeDashoffset: c.offset }}
+              transition={{ duration: .9, ease: 'easeOut' }} />
+          </svg>
+          <div className="goal-ring-label">
+            <strong>{toPersianDigits(c.pct)}٪</strong>
+            <small>{toPersianDigits(c.value)} از {toPersianDigits(c.target)}</small>
+          </div>
+          <p>{c.label}</p>
+        </div>
+      ))}
     </div>
+
+    <Card title="تنظیم اهداف">
+      <form onSubmit={save} className="form-grid two">
+        <label>جلسه در هفته
+          <input type="number" min="1" max="14" value={settings.weekly_sessions} onChange={(e) => set({ weekly_sessions: e.target.value })} />
+        </label>
+        <label>جلسه در ماه
+          <input type="number" min="1" max="60" value={settings.monthly_sessions} onChange={(e) => set({ monthly_sessions: e.target.value })} />
+        </label>
+        <label>کالری سوزاندن روزانه
+          <input type="number" min="0" max="3000" step="50" value={settings.daily_calories} onChange={(e) => set({ daily_calories: e.target.value })} />
+        </label>
+        <label>وزن هدف (کیلوگرم)
+          <input type="number" min="30" max="250" step="0.1" value={settings.target_weight_kg || ''} onChange={(e) => set({ target_weight_kg: e.target.value || null })} />
+        </label>
+        <label className="goal-note-field">یادداشت انگیزشی
+          <input value={settings.note || ''} onChange={(e) => set({ note: e.target.value })} placeholder="مثلاً: آماده‌سازی برای مسابقه" />
+        </label>
+        <button className="button primary" disabled={busy}><Check size={16} /> ذخیره اهداف</button>
+      </form>
+    </Card>
+
+    <div className="content-grid">
+      <Card title="خلاصه فعالیت">
+        <div className="list-row"><span className="icon-chip orange"><Flame size={16} /></span><div><strong>{toPersianDigits(summary?.today_calories || 0)} کالری</strong><small>سوزانده‌شده امروز</small></div></div>
+        <div className="list-row"><span className="icon-chip blue"><Flame size={16} /></span><div><strong>{toPersianDigits(summary?.week_calories || 0)} کالری</strong><small>این هفته</small></div></div>
+        {!!goals.calorie_target && <div className="list-row"><span className="icon-chip green"><Salad size={16} /></span><div><strong>{toPersianDigits(goals.calorie_target)} کالری</strong><small>هدف دریافت روزانه از برنامه غذایی</small></div></div>}
+        {goals.target_weight_kg && <div className="list-row"><span className="icon-chip purple"><Target size={16} /></span><div><strong>{toPersianDigits(goals.target_weight_kg)} کیلوگرم</strong><small>وزن هدف</small></div></div>}
+      </Card>
+      <Card title="امتیاز و سطح">
+        {points && <>
+          <div className="list-row"><span className="points-tier-emoji">{points.tier_emoji}</span><div><strong>{toPersianDigits(points.points)} امتیاز</strong><small>سطح {points.tier}</small></div></div>
+          {points.next_tier && <p className="points-next">{toPersianDigits(points.next_tier.sessions_needed)} جلسه تا سطح {points.next_tier.tier} {points.next_tier.tier_emoji} — {toPersianDigits(points.next_tier.discount)}٪ تخفیف</p>}
+          <div className="list-row"><span className="icon-chip blue"><CalendarDays size={16} /></span><div><strong>{toPersianDigits(points.attendance_count)} حضور</strong><small>مجموع کل</small></div></div>
+        </>}
+      </Card>
+    </div>
+  </section>
+}
+
+function GoalsCard({ goals, burnedToday }) {
+  const navigate = useNavigate()
+  const rows = [
+    { key: 'weekly', label: 'جلسه این هفته', value: goals.weekly.count, target: goals.weekly.target, unit: 'جلسه', tone: 'glaze' },
+    { key: 'monthly', label: 'جلسه این ماه', value: goals.monthly.count, target: goals.monthly.target, unit: 'جلسه', tone: 'plum' },
+    { key: 'burn', label: 'کالری سوزانده امروز', value: burnedToday ?? 0, target: goals.burn_target, unit: 'کالری', tone: 'saffron' },
+  ]
+  return <Card title="اهداف من" actionButton={<button className="text-button" onClick={() => navigate('/goals')}>تنظیم اهداف</button>}>
+    {goals.note && <p className="goal-note">« {goals.note} »</p>}
+    <div className="goal-bars">
+      {rows.map((r) => {
+        const pct = r.target ? Math.min(100, Math.round((r.value / r.target) * 100)) : 0
+        const done = pct >= 100
+        return <div className={`goal-bar-row tone-${r.tone} ${done ? 'done' : ''}`} key={r.key}>
+          <div className="goal-bar-head">
+            <span>{r.label}</span>
+            <strong>{toPersianDigits(r.value)}<i> / {toPersianDigits(r.target)} {r.unit}</i></strong>
+          </div>
+          <div className="goal-bar-track">
+            <motion.div className="goal-bar-fill" initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: .7, ease: 'easeOut' }} />
+          </div>
+          <small>{done ? 'رسیدی 🎉' : `${toPersianDigits(100 - pct)}٪ باقی مانده`}</small>
+        </div>
+      })}
+    </div>
+    {!!goals.calorie_target && <p className="goal-intake">هدف دریافت روزانه از برنامه غذایی: <strong>{toPersianDigits(goals.calorie_target)}</strong> کالری</p>}
   </Card>
 }
 
@@ -509,55 +860,162 @@ function CaloriesBurnedCard({ summary }) {
       <AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
         <defs>
           <linearGradient id="calorieFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ea580c" stopOpacity={.4} />
-            <stop offset="100%" stopColor="#ea580c" stopOpacity={0} />
+            <stop offset="0%" stopColor="#b4552f" stopOpacity={.4} />
+            <stop offset="100%" stopColor="#b4552f" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="label" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} />
         <YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={34} allowDecimals={false} />
         <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} formatter={(v) => [`${v} کالری`, '']} />
-        <Area type="monotone" dataKey="calories" stroke="#ea580c" strokeWidth={2} fill="url(#calorieFill)" dot={{ r: 3, fill: '#ea580c', strokeWidth: 0 }} />
+        <Area type="monotone" dataKey="calories" stroke="#b4552f" strokeWidth={2} fill="url(#calorieFill)" dot={{ r: 3, fill: '#b4552f', strokeWidth: 0 }} />
       </AreaChart>
     </ResponsiveContainer></div>
   </Card>
 }
 
+const TIER_LADDER = [
+  { label: 'برنزی', emoji: '🥉', sessions: 36, discount: 3 },
+  { label: 'نقره‌ای', emoji: '🥈', sessions: 72, discount: 7 },
+  { label: 'طلایی', emoji: '🥇', sessions: 144, discount: 14 },
+  { label: 'الماس', emoji: '💎', sessions: 288, discount: 15 },
+]
+
 function PointsCard({ points }) {
-  const progressPct = points.next_tier ? Math.min(100, Math.round((points.points / (points.points + points.next_tier.points_needed)) * 100)) : 100
+  const nt = points.next_tier
+  // Progress toward the next tier is measured in sessions now, because that
+  // is what the tier is actually earned with.
+  const progressPct = nt
+    ? Math.min(100, Math.round((points.attendance_count / (points.attendance_count + nt.sessions_needed)) * 100))
+    : 100
   return <motion.section className="points-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35, delay: .1 }}>
     <div className="points-card-top">
       <span className="points-tier-emoji">{points.tier_emoji}</span>
-      <div><strong>{points.points} امتیاز</strong><small>سطح {points.tier}</small></div>
+      <div>
+        <strong>سطح {points.tier}</strong>
+        <small>{toPersianDigits(points.attendance_count)} جلسه حضور · {toPersianDigits(points.points)} امتیاز</small>
+      </div>
       <Link to="/leaderboard" className="text-button">جدول امتیازات</Link>
     </div>
     <div className="points-bar"><motion.div className="points-bar-fill" initial={{ width: 0 }} animate={{ width: `${progressPct}%` }} transition={{ duration: .6, ease: 'easeOut' }} /></div>
-    {points.next_tier && <small className="points-next">{points.next_tier.points_needed} امتیاز تا سطح {points.next_tier.tier} {points.next_tier.tier_emoji}</small>}
+    {nt
+      ? <small className="points-next">{toPersianDigits(nt.sessions_needed)} جلسه تا سطح {nt.tier} {nt.tier_emoji} — {toPersianDigits(nt.discount)}٪ تخفیف اشتراک</small>
+      : <small className="points-next">بالاترین سطح را داری 💎</small>}
+    {!!points.tier_discount && <small className="points-next tier-perk">هم‌اکنون {toPersianDigits(points.tier_discount)}٪ تخفیف دائمی روی اشتراک داری</small>}
   </motion.section>
 }
 
-function Leaderboard() {
+// Must mirror LEADERBOARD_REWARDS in progress/views.py — rank -> one-time prize.
+const LEADERBOARD_REWARD_PERCENTS = { 1: 15, 2: 10, 3: 5 }
+
+function Leaderboard({ user }) {
+  const admin = user.role === 'ADMIN'
   const [rows, setRows] = useState([]); const [myId, setMyId] = useState(null); const [message, setMessage] = useState('')
-  useEffect(() => { api.get('/progress/leaderboard/').then(({ data }) => { setRows(data.leaderboard); setMyId(data.my_member_id) }).catch((e) => setMessage(errorMessage(e))) }, [])
+  const [granting, setGranting] = useState(false)
+  const [history, setHistory] = useState([])
+  const load = () => {
+    api.get('/progress/leaderboard/').then(({ data }) => { setRows(data.leaderboard); setMyId(data.my_member_id) }).catch((e) => setMessage(errorMessage(e)))
+    api.get('/progress/leaderboard/history/').then(({ data }) => setHistory(data.periods)).catch(() => {})
+  }
+  useEffect(() => { load() }, [])
+  const grantRewards = async () => {
+    setGranting(true)
+    try {
+      const { data } = await api.post('/progress/leaderboard/grant-rewards/')
+      setMessage(data.granted.length
+        ? `جایزه اهدا شد: ${data.granted.map((g) => `${g.member_name} (${g.percent}٪)`).join('، ')}`
+        : 'سه نفر برتر همین الان یک جایزه تخفیف فعال دارند.')
+    } catch (e) { setMessage(errorMessage(e)) } finally { setGranting(false) }
+  }
   return <section className="page-stack"><PageTitle title="جدول امتیازات" text="امتیاز از حضور در کلاس‌ها، ثبت پیشرفت بدن و داشتن اشتراک فعال به‌دست می‌آید." /><Message text={message} />
+    {admin && <Card title="جایزه لیدربورد">
+      <p className="reward-hint">سه نفر برتر فعلی جایزه می‌گیرند: نفر اول ۱۵٪، دوم ۱۰٪، سوم ۵٪ تخفیف روی یک خرید — و پس از آن ۳٪ / ۲٪ / ۱٪ تخفیف دائمی. هر زمان که خواستی (مثلاً پایان ماه) این دکمه را بزن.</p>
+      <button className="button primary" disabled={granting} onClick={grantRewards}><Award size={16} /> اهدای جایزه به سه نفر برتر</button>
+    </Card>}
+    <Card title="سطح‌های عضویت و تخفیف">
+      <p className="reward-hint">سطحت با تعداد جلساتی که واقعاً آمده‌ای بالا می‌رود و هر سطح یک تخفیف دائمی روی اشتراک دارد.</p>
+      <div className="tier-ladder">
+        {TIER_LADDER.map((t) => (
+          <div className="tier-step" key={t.label}>
+            <span className="tier-emoji">{t.emoji}</span>
+            <strong>{t.label}</strong>
+            <small>{toPersianDigits(t.sessions)} جلسه</small>
+            <span className="tier-discount">{toPersianDigits(t.discount)}٪</span>
+          </div>
+        ))}
+      </div>
+      <p className="reward-hint tier-foot">جایزه سه نفر برتر هر دوره جداگانه است: نفر اول ۱۵٪، دوم ۱۰٪، سوم ۵٪ برای یک خرید — و بعد از آن ۳٪ / ۲٪ / ۱٪ تخفیف دائمی. تخفیف‌ها با هم جمع نمی‌شوند؛ بیشترین مورد اعمال می‌شود.</p>
+    </Card>
     <Card title="رتبه‌بندی اعضا">
       {rows.length ? rows.map((row, i) => <motion.div className={`leaderboard-row ${row.member_id === myId ? 'me' : ''}`} key={row.member_id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .25, delay: i * .03 }}>
         <span className={`rank-badge rank-${row.rank <= 3 ? row.rank : 'other'}`}>{row.rank}</span>
-        <div><strong>{row.full_name}</strong><small>{row.attendance_count} حضور</small></div>
+        <div><Link className="trainer-link" to={`/u/${row.member_id}`}><strong>{row.full_name}</strong></Link><small>{row.attendance_count} حضور</small></div>
+        {LEADERBOARD_REWARD_PERCENTS[row.rank] && <span className="reward-tag">🎁 {LEADERBOARD_REWARD_PERCENTS[row.rank]}٪</span>}
         <span className="points-tier-emoji small">{row.tier_emoji}</span>
         <strong className="capacity">{row.points} امتیاز</strong>
       </motion.div>) : <Empty text="هنوز داده‌ای برای رتبه‌بندی وجود ندارد." />}
     </Card>
+    {!!history.length && <Card title="نفرات برتر دوره‌های قبل">
+      {history.map((period) => (
+        <div className="history-period" key={period.granted_on}>
+          <p className="eyebrow">{formatDate(period.granted_on)}</p>
+          <div className="history-winners">
+            {period.winners.map((w) => (
+              <div className={`history-winner ${w.is_me ? 'me' : ''}`} key={`${period.granted_on}-${w.member_id}`}>
+                <span className={`rank-badge rank-${w.rank}`}>{toPersianDigits(w.rank)}</span>
+                <div><strong>{w.full_name}</strong><small>{toPersianDigits(w.percent)}٪ تخفیف</small></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </Card>}
   </section>
 }
 
 function Memberships() {
-  const [plans, setPlans] = useState([]); const [subscriptions, setSubscriptions] = useState([]); const [message, setMessage] = useState('')
-  const load = () => Promise.all([api.get('/plans/'), api.get('/subscriptions/me/')]).then(([a, b]) => { setPlans(getItems(a.data)); setSubscriptions(getItems(b.data)) }).catch((e) => setMessage(errorMessage(e)))
+  const [plans, setPlans] = useState([]); const [subscriptions, setSubscriptions] = useState([]); const [rewards, setRewards] = useState([]); const [message, setMessage] = useState('')
+  const [discount, setDiscount] = useState(null)
+  const load = () => Promise.all([api.get('/plans/'), api.get('/subscriptions/me/'), api.get('/rewards/me/'), api.get('/discount/me/')]).then(([a, b, c, d]) => { setPlans(getItems(a.data)); setSubscriptions(getItems(b.data)); setRewards(getItems(c.data)); setDiscount(d.data) }).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [])
-  const subscribe = async (plan) => { try { await api.post('/subscribe/', { plan: plan.id }); setMessage('اشتراک شما با موفقیت فعال شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
+  const activeReward = rewards.find((r) => !r.is_redeemed)
+  const subscribe = async (plan) => {
+    try {
+      const { data } = await api.post('/subscribe/', { plan: plan.id })
+      const paid = Number(data.payment.amount)
+      setMessage(paid < Number(plan.price) ? `اشتراک با تخفیف جایزه لیدربورد فعال شد! مبلغ پرداختی: ${formatPrice(paid)}` : 'اشتراک شما با موفقیت فعال شد.')
+      load()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
   const cancelSubscription = async (id) => { try { await api.post(`/subscriptions/${id}/cancel/`); setMessage('اشتراک لغو شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="اشتراک باشگاه" text="پلنی را انتخاب کن که با ریتم تمرینت هماهنگ است." /><Message text={message} /><div className="plan-grid">{plans.map((plan, index) => <article className={`plan-card  ${index === 1 ? 'featured' : ''}`} key={plan.id}>{index === 1 && <span className="pill">پیشنهاد تناسب</span>}<p>{plan.duration_days} روز دسترسی</p><h2>{plan.name}</h2><strong>{formatPrice(plan.price)}</strong><small>{plan.description}</small><button className="button primary" onClick={() => subscribe(plan)}>انتخاب پلن <ChevronLeft size={17} /></button></article>)}</div><Card title="اشتراک‌های من">{subscriptions.map((subscription) => <div className="list-row" key={subscription.id}><Status value={subscription.status} /><div><strong>{subscription.plan_name}</strong><small>تا {formatDate(subscription.end_date)}</small></div>{subscription.status === 'ACTIVE' && <button className="button muted" onClick={() => cancelSubscription(subscription.id)}>لغو اشتراک</button>}</div>) || <Empty text="هنوز اشتراکی ثبت نشده است." />}</Card></section>
+  return <section className="page-stack"><PageTitle title="اشتراک باشگاه" text="پلنی را انتخاب کن که با ریتم تمرینت هماهنگ است." /><Message text={message} />
+    {activeReward && <div className="reward-banner"><Trophy size={20} /><div>
+      <strong>چون رتبه {toPersianDigits(String(activeReward.rank))} جدول امتیازات شدی، {toPersianDigits(String(activeReward.percent))}٪ تخفیف داری 🎉</strong>
+      <small>این جایزه بابت دوره‌ای است که در {formatDate(activeReward.granted_at)} بسته شد. تخفیف روی اولین اشتراکی که بخری خودکار اعمال می‌شود — کاری لازم نیست بکنی.</small>
+    </div></div>}
+    {!activeReward && !!rewards.length && (
+      <p className="reward-hint reward-used-note">
+        <Trophy size={14} /> آخرین جایزه‌ات ({toPersianDigits(String(rewards[0].percent))}٪ بابت رتبه {toPersianDigits(String(rewards[0].rank))}) قبلاً استفاده شده است.
+      </p>
+    )}
+    <div className="plan-grid">{plans.map((plan, index) => {
+      // With a reward in hand the sticker price is not what they'll pay, so
+      // show both: the original struck through, the real one beneath it.
+      const pct = discount?.percent || 0
+      const discounted = pct ? Math.round(Number(plan.price) * (100 - pct) / 100) : null
+      return <article className={`plan-card  ${index === 1 ? 'featured' : ''}`} key={plan.id}>
+        {index === 1 && <span className="pill">پیشنهاد تناسب</span>}
+        <p>{plan.duration_days} روز دسترسی</p>
+        <h2>{plan.name}</h2>
+        {discounted !== null ? <div className="plan-price-block">
+          <span className="plan-price-old">{formatPrice(plan.price)}</span>
+          <strong>{formatPrice(discounted)}</strong>
+          <span className="plan-price-badge">{toPersianDigits(pct)}٪ — {discount.label}</span>
+        </div> : <strong>{formatPrice(plan.price)}</strong>}
+        <small>{plan.description}</small>
+        <button className="button primary" onClick={() => subscribe(plan)}>انتخاب پلن <ChevronLeft size={17} /></button>
+      </article>
+    })}</div><Card title="اشتراک‌های من">{subscriptions.map((subscription) => <div className="list-row" key={subscription.id}><Status value={subscription.status} /><div><strong>{subscription.plan_name}</strong><small>تا {formatDate(subscription.end_date)}</small></div>{subscription.status === 'ACTIVE' && <button className="button muted" onClick={() => cancelSubscription(subscription.id)}>لغو اشتراک</button>}</div>) || <Empty text="هنوز اشتراکی ثبت نشده است." />}</Card></section>
 }
 
 function MembershipCard({ user }) {
@@ -738,18 +1196,19 @@ function FaceCheckIn({ sessions, sessionId, setSessionId, onScan }) {
 function Classes({ user }) {
   const admin = user.role === 'ADMIN'
   const [sessions, setSessions] = useState([]); const [bookings, setBookings] = useState([]); const [attendance, setAttendance] = useState([]); const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [message, setMessage] = useState('')
+  const [openId, setOpenId] = useState(null)
   const load = () => {
-    const calls = [api.get('/sessions/')]
+    const calls = [api.get('/sessions/'), api.get('/classes/')]
     if (user.role === 'MEMBER') calls.push(api.get('/bookings/'), api.get('/attendance/'))
-    if (admin) calls.push(api.get('/classes/'), api.get('/auth/trainers/'))
+    if (admin) calls.push(api.get('/auth/trainers/'))
     return Promise.all(calls).then((results) => {
       setSessions(getItems(results[0].data))
+      setClasses(getItems(results[1].data))
       if (user.role === 'MEMBER') {
-        setBookings(getItems(results[1].data))
-        setAttendance(getItems(results[2].data))
+        setBookings(getItems(results[2].data))
+        setAttendance(getItems(results[3].data))
       }
       if (admin) {
-        setClasses(getItems(results[1].data))
         setTrainers(getItems(results[2].data))
       }
     }).catch((e) => setMessage(errorMessage(e)))
@@ -758,7 +1217,315 @@ function Classes({ user }) {
   const book = async (id) => { try { await api.post('/bookings/', { session: id }); setMessage('رزرو با موفقیت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
   const cancel = async (id) => { try { await api.post(`/bookings/${id}/cancel/`); setMessage('رزرو لغو شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
   const selfCheckIn = async (sessionId) => { try { await api.post('/attendance/check-in/', { session: sessionId }); setMessage('حضورت ثبت شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); return <article className="session-card " key={session.id}><div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <><button className="button primary" onClick={() => selfCheckIn(session.id)}>ثبت حضور</button><button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button></> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>)}</article> })}</div></section>
+  const openSession = sessions.find((s) => s.id === openId) || null
+  const openClass = openSession ? classes.find((c) => c.id === openSession.gym_class) : null
+  return <section className="page-stack"><PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} /><Message text={message} />{admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}<div className="session-grid">{sessions.map((session) => { const booking = bookings.find((item) => item.session === session.id && item.status === 'CONFIRMED'); const attended = attendance.some((item) => item.session === session.id); const cover = classes.find((c) => c.id === session.gym_class)?.cover_image; return <article className="session-card session-card-clickable" key={session.id} onClick={() => setOpenId(session.id)}>{cover && <div className="session-cover"><img src={cover} alt={session.gym_class_name} /></div>}<div className="session-top"><span className="session-icon"><Dumbbell size={21} /></span><span>{formatDate(session.session_date)}</span></div><h3>{session.gym_class_name}</h3><p>{session.trainer_name}</p><div className="session-meta"><span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span><span>{session.remaining_capacity} جای خالی</span></div>{user.role === 'MEMBER' && (
+    <div className="session-actions" onClick={(e) => e.stopPropagation()}>
+      {attended ? <span className="attended-badge"><Check size={15} /> حضورت ثبت شده</span> : booking ? <><button className="button primary" onClick={() => selfCheckIn(session.id)}>ثبت حضور</button><button className="button muted" onClick={() => cancel(booking.id)}>لغو رزرو</button></> : <button className="button primary" disabled={session.is_full} onClick={() => book(session.id)}>{session.is_full ? 'تکمیل ظرفیت' : 'رزرو کلاس'}</button>}
+    </div>
+  )}</article> })}</div>
+  <AnimatePresence>
+    {openSession && <SessionDetailModal session={openSession} gymClass={openClass} user={user} onClose={() => setOpenId(null)} setMessage={setMessage} />}
+  </AnimatePresence>
+  </section>
+}
+
+/** A class's own page: what it is, how it's gone historically, and when it
+ *  runs next. Replaces the old popup — a class is a thing you research
+ *  before committing to, not a tooltip. */
+function ClassDetailPage({ user }) {
+  const { id } = useParams()
+  const admin = user.role === 'ADMIN'
+  const [gymClass, setGymClass] = useState(null)
+  const [history, setHistory] = useState(null)
+  const [upcoming, setUpcoming] = useState([])
+  const [message, setMessage] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const load = () => {
+    api.get(`/classes/${id}/`).then(({ data }) => { setGymClass(data); setDraft(data.description_html || '') })
+      .catch((e) => setMessage(errorMessage(e)))
+    api.get(`/classes/${id}/history/`).then(({ data }) => setHistory(data)).catch(() => {})
+    api.get(`/sessions/?gym_class=${id}`).then(({ data }) => setUpcoming(getItems(data))).catch(() => {})
+  }
+  useEffect(() => { load() }, [id])
+
+  const saveDescription = async () => {
+    try {
+      await api.patch(`/classes/${id}/`, { description_html: draft })
+      setMessage('توضیحات کلاس ذخیره شد.'); setEditing(false); load()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  if (!gymClass) return <section className="page-stack"><Message text={message} />{!message && <Empty text="در حال بارگذاری..." />}</section>
+
+  const s = history?.summary
+  return <section className="page-stack">
+    <Link to="/classes" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به کلاس‌ها</Link>
+    <Message text={message} />
+
+    <header className="class-hero" style={gymClass.cover_image ? { backgroundImage: `url(${gymClass.cover_image})` } : undefined}>
+      <div className="class-hero-body">
+        {gymClass.category && <span className="event-hero-badge">{gymClass.category}</span>}
+        <h2>{gymClass.name}</h2>
+        {gymClass.description && <p>{gymClass.description}</p>}
+      </div>
+    </header>
+
+    {!!s && s.sessions_held > 0 && (
+      <div className="rate-grid">
+        <div className="rate-card"><div className="rate-top"><span>جلسه برگزار شده</span><strong>{toPersianDigits(s.sessions_held)}</strong></div><small>تجربه‌ی این کلاس تا امروز</small></div>
+        <div className="rate-card"><div className="rate-top"><span>میانگین حاضران</span><strong>{toPersianDigits(s.avg_attendance)}</strong></div><small>به‌طور متوسط در هر جلسه</small></div>
+        <div className="rate-card"><div className="rate-top"><span>نرخ حضور</span><strong className={s.show_up_rate >= 70 ? 'good' : 'bad'}>{toPersianDigits(s.show_up_rate)}٪</strong></div>
+          <div className="rate-bar"><motion.div className={s.show_up_rate >= 70 ? 'good' : 'bad'} initial={{ width: 0 }} animate={{ width: `${s.show_up_rate}%` }} transition={{ duration: .7 }} /></div>
+          <small>از رزروکننده‌ها چند نفر واقعاً آمدند</small></div>
+      </div>
+    )}
+
+    <Card title="درباره این کلاس" actionButton={admin && !editing && <button className="button muted" onClick={() => setEditing(true)}><Edit2 size={15} /> ویرایش</button>}>
+      {editing ? <>
+        <RichTextField label="" value={draft} onChange={setDraft} />
+        <div className="inline-form" style={{ marginTop: '.7rem' }}>
+          <button className="button primary" onClick={saveDescription}><Check size={16} /> ذخیره</button>
+          <button className="button muted" onClick={() => { setEditing(false); setDraft(gymClass.description_html || '') }}>انصراف</button>
+        </div>
+      </> : <RichContent html={gymClass.description_html} fallback="توضیح کاملی برای این کلاس ثبت نشده." />}
+    </Card>
+
+    <div className="content-grid">
+      <Card title="جلسات پیش رو">
+        {upcoming.length ? upcoming.map((session) => (
+          <div className="list-row" key={session.id}>
+            <span className="session-icon"><CalendarDays size={16} /></span>
+            <div><strong>{formatDate(session.session_date)}</strong><small>{session.trainer_name} · {toPersianDigits(session.start_time?.slice(0, 5))}</small></div>
+            <span className="capacity">{toPersianDigits(session.remaining_capacity)} جای خالی</span>
+          </div>
+        )) : <Empty text="جلسه‌ای برای این کلاس برنامه‌ریزی نشده." />}
+      </Card>
+      <Card title="تجربه جلسات قبلی">
+        {history?.sessions?.length ? history.sessions.map((h) => (
+          <div className="list-row" key={h.id}>
+            <div><strong>{formatDate(h.session_date)}</strong>
+              <small><Link className="trainer-link" to={`/trainers/${h.trainer_id}`}>{h.trainer_name}</Link></small></div>
+            <span className="capacity">{toPersianDigits(h.attended)} از {toPersianDigits(h.booked)} رزرو</span>
+          </div>
+        )) : <Empty text="هنوز جلسه‌ای از این کلاس برگزار نشده." />}
+      </Card>
+    </div>
+  </section>
+}
+
+function SessionDetailModal({ session, gymClass, user, onClose, setMessage }) {
+  const canSeeRoster = user.role === 'ADMIN' || user.role === 'TRAINER'
+  const [roster, setRoster] = useState(null)
+  const [attendanceIds, setAttendanceIds] = useState(new Set())
+
+  useEffect(() => {
+    if (!canSeeRoster) return
+    Promise.all([
+      api.get(`/bookings/?session=${session.id}&status=CONFIRMED`),
+      api.get(`/attendance/?session=${session.id}`),
+    ]).then(([b, a]) => {
+      setRoster(getItems(b.data))
+      setAttendanceIds(new Set(getItems(a.data).map((item) => item.member)))
+    }).catch((e) => setMessage?.(errorMessage(e)))
+  }, [session.id])
+
+  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
+    <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
+      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
+      <div className="session-detail-header">
+        <span className="session-icon"><Dumbbell size={21} /></span>
+        <div>
+          <h2>{session.gym_class_name}</h2>
+          {gymClass?.category && <span className="competition-card-tag">{gymClass.category}</span>}
+        </div>
+      </div>
+      <div className="event-detail-meta">
+        <span><CalendarDays size={14} /> {formatDate(session.session_date)}</span>
+        <span><Users size={14} /> {session.trainer_name}</span>
+      </div>
+      <div className="session-meta">
+        <span>{session.start_time?.slice(0, 5)} تا {session.end_time?.slice(0, 5)}</span>
+        <span className="capacity">{session.booked_count} از {session.capacity} نفر</span>
+      </div>
+      <p className="event-detail-desc">{gymClass?.description || 'توضیحاتی برای این کلاس ثبت نشده.'}</p>
+      {session.gym_class && <Link className="button muted" to={`/classes/${session.gym_class}`}><ArrowLeft size={15} /> صفحه کامل این کلاس</Link>}
+      {canSeeRoster && (
+        <div className="session-roster">
+          <h4>لیست شرکت‌کنندگان</h4>
+          {roster === null ? <p className="empty">در حال بارگذاری...</p> : roster.length ? (
+            <div className="roster-list">
+              {roster.map((b) => (
+                <div className="list-row" key={b.id}>
+                  <span className="icon-chip blue"><CircleUserRound size={16} /></span>
+                  <div><strong>{b.member_name}</strong></div>
+                  {attendanceIds.has(b.member) && <span className="attended-badge roster-attended"><Check size={13} /> حاضر</span>}
+                </div>
+              ))}
+            </div>
+          ) : <Empty text="هنوز کسی رزرو نکرده است." />}
+        </div>
+      )}
+    </motion.div>
+  </motion.div>
+}
+
+function TrainersPage() {
+  const [trainers, setTrainers] = useState([])
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    api.get('/auth/trainers/all/').then(({ data }) => setTrainers(getItems(data))).catch((e) => setMessage(errorMessage(e)))
+  }, [])
+  return <section className="page-stack">
+    <PageTitle title="مربیان باشگاه" text="با مربی‌ها آشنا شو و برنامه‌ی کلاس‌هایشان را ببین." />
+    <Message text={message} />
+    <div className="trainer-grid">
+      {trainers.map((t, i) => (
+        <motion.div key={t.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
+          <Link to={`/trainers/${t.id}`} className="trainer-card">
+            {t.photo
+              ? <img className="trainer-card-photo" src={t.photo} alt={t.full_name} />
+              : <span className="avatar trainer-card-avatar">{t.full_name?.[0]}</span>}
+            <strong>{t.full_name}</strong>
+            <small>{t.specialization || 'مربی باشگاه'}</small>
+          </Link>
+        </motion.div>
+      ))}
+    </div>
+    {!trainers.length && <Empty text="مربی‌ای ثبت نشده است." />}
+  </section>
+}
+
+/** A trainer's public page. Student figures are counts only — who trains
+ *  with whom is other members' private business. */
+function TrainerProfilePage({ user }) {
+  const { id } = useParams()
+  const [data, setData] = useState(null)
+  const [message, setMessage] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  // A trainer may edit their own page; so may an admin.
+  const canEdit = user.role === 'ADMIN' || (user.role === 'TRAINER' && data?.full_name === user.full_name)
+
+  const load = () => api.get(`/auth/trainers/${id}/profile/`)
+    .then(({ data }) => { setData(data); setDraft(data.bio_html || '') })
+    .catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [id])
+
+  const saveBio = async () => {
+    try {
+      await api.patch('/auth/me/', { bio_html: draft })
+      setMessage('بیو ذخیره شد.'); setEditing(false); load()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  if (!data) return <section className="page-stack"><Message text={message} />{!message && <Empty text="در حال بارگذاری..." />}</section>
+
+  const st = data.stats
+  return <section className="page-stack">
+    <Link to="/trainers" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به مربیان</Link>
+    <Message text={message} />
+
+    <header className="profile-hero">
+      {data.photo
+        ? <img className="profile-hero-photo" src={data.photo} alt={data.full_name} />
+        : <span className="avatar profile-hero-avatar">{data.full_name?.[0]}</span>}
+      <div>
+        <h2>{data.full_name}</h2>
+        <p>{data.specialization || 'مربی باشگاه'}{data.experience_years ? ` · ${toPersianDigits(data.experience_years)} سال سابقه` : ''}</p>
+        {data.bio && <p className="profile-hero-bio">{data.bio}</p>}
+      </div>
+    </header>
+
+    {/* Three facts, not eight. Session counts and raw check-in totals said
+        nothing a member deciding on a trainer would act on. */}
+    <div className="rate-grid trainer-facts">
+      <div className="rate-card"><div className="rate-top"><span>شاگرد</span><strong>{toPersianDigits(st.students_taught)}</strong></div><small>تعداد افرادی که با او تمرین کرده‌اند</small></div>
+      <div className="rate-card"><div className="rate-top"><span>حوزه کاری</span><strong className="rate-text">{data.specialization || 'تمرینات عمومی'}</strong></div></div>
+      <div className="rate-card"><div className="rate-top"><span>سابقه</span><strong>{toPersianDigits(data.experience_years)} سال</strong></div></div>
+    </div>
+
+    <Card title="درباره مربی" actionButton={canEdit && !editing && <button className="button muted" onClick={() => setEditing(true)}><Edit2 size={15} /> ویرایش</button>}>
+      {editing ? <>
+        <RichTextField label="" value={draft} onChange={setDraft} />
+        <div className="inline-form" style={{ marginTop: '.7rem' }}>
+          <button className="button primary" onClick={saveBio}><Check size={16} /> ذخیره</button>
+          <button className="button muted" onClick={() => { setEditing(false); setDraft(data.bio_html || '') }}>انصراف</button>
+        </div>
+      </> : <RichContent html={data.bio_html} fallback="این مربی هنوز معرفی کاملی ننوشته." />}
+    </Card>
+
+    <div className="content-grid">
+      <Card title="کلاس‌هایی که تدریس می‌کند">
+        {data.classes.length ? data.classes.map((c) => (
+          <Link className="list-row class-link-row" key={c.id} to={`/classes/${c.id}`}>
+            <span className="session-icon"><Dumbbell size={16} /></span>
+            <div><strong>{c.name}</strong><small>{c.category}</small></div>
+            <ChevronLeft size={16} />
+          </Link>
+        )) : <Empty text="کلاسی ثبت نشده." />}
+      </Card>
+      <Card title="جلسات پیش رو">
+        {data.upcoming_sessions.length ? data.upcoming_sessions.map((s) => (
+          <div className="list-row" key={s.id}>
+            <div><strong>{s.gym_class}</strong><small>{formatDate(s.session_date)} · {toPersianDigits(s.start_time?.slice(0, 5))}</small></div>
+            <span className="capacity">{toPersianDigits(s.booked)} از {toPersianDigits(s.capacity)}</span>
+          </div>
+        )) : <Empty text="جلسه‌ای برنامه‌ریزی نشده." />}
+      </Card>
+    </div>
+  </section>
+}
+
+/** A member's public page. `can_see_detail` comes from the server, which is
+ *  where the privacy decision is actually enforced — this only renders what
+ *  it was given. */
+function MemberProfilePage() {
+  const { id } = useParams()
+  const [data, setData] = useState(null)
+  const [message, setMessage] = useState('')
+  useEffect(() => {
+    api.get(`/auth/members/${id}/profile/`).then(({ data }) => setData(data)).catch((e) => setMessage(errorMessage(e)))
+  }, [id])
+  if (!data) return <section className="page-stack"><Message text={message} />{!message && <Empty text="در حال بارگذاری..." />}</section>
+
+  return <section className="page-stack">
+    <Link to="/leaderboard" className="blog-back-link"><ArrowLeft size={15} /> بازگشت</Link>
+    <Message text={message} />
+    <header className="profile-hero">
+      <span className="avatar profile-hero-avatar">{data.full_name?.[0]}</span>
+      <div>
+        <h2>{data.full_name} {data.is_me && <span className="capacity">خودت</span>}</h2>
+        <p><span className="points-tier-emoji small">{data.tier_emoji}</span> سطح {data.tier} · عضو از {formatDate(data.member_since)}</p>
+      </div>
+    </header>
+
+    {data.can_see_detail ? <>
+      <div className="rate-grid">
+        <div className="rate-card"><div className="rate-top"><span>امتیاز</span><strong>{toPersianDigits(data.points)}</strong></div></div>
+        <div className="rate-card"><div className="rate-top"><span>کل حضورها</span><strong>{toPersianDigits(data.stats.total_check_ins)}</strong></div></div>
+        <div className="rate-card"><div className="rate-top"><span>۳۰ روز اخیر</span><strong>{toPersianDigits(data.stats.check_ins_30d)}</strong></div></div>
+        <div className="rate-card"><div className="rate-top"><span>کلاس تجربه‌شده</span><strong>{toPersianDigits(data.stats.classes_tried)}</strong></div></div>
+      </div>
+      <Card title="کلاس‌های اخیر">
+        {data.recent_classes.length ? data.recent_classes.map((c, i) => (
+          <div className="list-row" key={i}>
+            <span className="icon-chip blue"><Dumbbell size={16} /></span>
+            <div><strong>{c.gym_class}</strong><small>{c.trainer_name}</small></div>
+            <span className="capacity">{formatDate(c.date)}</span>
+          </div>
+        )) : <Empty text="هنوز در کلاسی شرکت نکرده." />}
+      </Card>
+    </> : (
+      <Card title="پروفایل خصوصی">
+        <div className="private-profile"><UserX size={30} />
+          <p>این عضو پروفایلش را خصوصی کرده است. فعالیت و کلاس‌هایش نمایش داده نمی‌شود.</p>
+        </div>
+      </Card>
+    )}
+  </section>
 }
 
 const MUSCLE_GROUPS = [
@@ -1047,10 +1814,10 @@ function Competitions({ user }) {
             <motion.div className="competition-card" key={c.id} onClick={() => setOpenId(c.id)} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
               <div className="competition-card-image">
                 {c.image ? <img src={c.image} alt={c.title} /> : <Trophy size={28} />}
-                <span className="competition-card-days">{c.days_remaining} روز مانده</span>
+                <span className="competition-card-days">{toPersianDigits(c.days_remaining)} روز مانده</span>
+                <h4 className="competition-card-title">{c.title}</h4>
               </div>
               <div className="competition-card-body">
-                <h4>{c.title}</h4>
                 <div className="competition-card-meta">
                   <span className="competition-card-tag">{c.kind === 'INDIVIDUAL' ? 'فردی' : 'تیمی'}</span>
                   <span className="competition-card-tag">{competitionLevelLabel(c.level)}</span>
@@ -1147,8 +1914,8 @@ function CompetitionManager({ onCreated, setMessage }) {
       <label>توضیحات<textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
       <label>نوع<select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}><option value="INDIVIDUAL">فردی</option><option value="TEAM">تیمی</option></select></label>
       <label>سطح<select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>{COMPETITION_LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select></label>
-      <Field label="تاریخ شروع" type="date" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} required />
-      <Field label="تاریخ پایان" type="date" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} required />
+      <JalaliDateField label="تاریخ شروع" value={form.start_date} onChange={(start_date) => setForm({ ...form, start_date })} required />
+      <JalaliDateField label="تاریخ پایان" value={form.end_date} onChange={(end_date) => setForm({ ...form, end_date })} required />
       <div>
         <label>جوایز</label>
         {form.prizes.map((p, i) => (
@@ -1257,7 +2024,7 @@ function EventManager({ onCreated, setMessage }) {
       <Field label="عنوان رویداد" value={form.title} onChange={(title) => setForm({ ...form, title })} required />
       <label>توضیحات<textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
       <Field label="مکان (اختیاری)" value={form.location} onChange={(location) => setForm({ ...form, location })} />
-      <Field label="تاریخ رویداد" type="date" value={form.event_date} onChange={(event_date) => setForm({ ...form, event_date })} required />
+      <JalaliDateField label="تاریخ رویداد" value={form.event_date} onChange={(event_date) => setForm({ ...form, event_date })} required />
       <label>تصویر رویداد (اختیاری)
         <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} />
       </label>
@@ -1286,10 +2053,10 @@ function EventsPage({ user }) {
             <motion.div className="competition-card" key={e.id} onClick={() => setOpenId(e.id)} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
               <div className="competition-card-image">
                 {e.image ? <img src={e.image} alt={e.title} /> : <CalendarRange size={28} />}
-                <span className="competition-card-days">{e.days_remaining >= 0 ? `${e.days_remaining} روز مانده` : 'برگزار شد'}</span>
+                <span className="competition-card-days">{e.days_remaining >= 0 ? `${toPersianDigits(e.days_remaining)} روز مانده` : 'برگزار شد'}</span>
+                <h4 className="competition-card-title">{e.title}</h4>
               </div>
               <div className="competition-card-body">
-                <h4>{e.title}</h4>
                 <div className="competition-card-footer">
                   <span>{formatDate(e.event_date)}</span>
                   {e.location && <span><MapPin size={12} /> {e.location}</span>}
@@ -1306,31 +2073,455 @@ function EventsPage({ user }) {
   </section>
 }
 
-function Plans({ user }) {
-  const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
-  const [walking, setWalking] = useState(false)
-  const trainer = user.role === 'TRAINER'
-  const member = user.role === 'MEMBER'
-  const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), ...(trainer ? [api.get('/auth/assignments/')] : [])]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(c ? getItems(c.data) : []) }).catch((e) => setMessage(errorMessage(e)))
-  useEffect(() => { load() }, [user.role])
-  const archive = async (type, id) => { try { await api.post(`/${type}/${id}/archive/`); setMessage('برنامه بایگانی شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title={trainer ? 'برنامه‌سازی اعضا' : 'برنامه‌های من'} text={trainer ? 'برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات.' : 'جزئیات برنامه‌ی تمرینی و رژیم غذایی‌ات.'} /><Message text={message} />
-    {trainer && <WorkoutPlanBuilder assignments={assignments} onCreated={load} onError={setMessage} />}
-    {trainer && <DietPlanQuickCreate assignments={assignments} onCreated={load} onError={setMessage} />}
-    {member && <button className="button primary walk-launch-btn" onClick={() => setWalking(true)}><MapPin size={16} /> شروع پیاده‌روی</button>}
-    <div className="content-grid"><PlanSection title="برنامه تمرینی" kind="workout-plans" plans={workouts} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /><PlanSection title="رژیم غذایی" kind="diet-plans" plans={diets} canEdit={trainer} archive={archive} onChanged={load} setMessage={setMessage} /></div>
-    <AnimatePresence>{walking && <WalkingTrackerModal onClose={() => setWalking(false)} />}</AnimatePresence>
+const BLOG_CATEGORIES = [
+  { value: 'COMPETITION_REPORT', label: 'گزارش مسابقه' },
+  { value: 'NEWS', label: 'اخبار باشگاه' },
+  { value: 'GENERAL', label: 'عمومی' },
+]
+const blogCategoryLabel = (value) => BLOG_CATEGORIES.find((c) => c.value === value)?.label || value
+
+function BlogManager({ onCreated, setMessage }) {
+  const blank = () => ({ title: '', category: 'GENERAL', content_html: '', video_url: '', is_published: true })
+  const [form, setForm] = useState(blank())
+  const [imageFile, setImageFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const { data: created } = await api.post('/blog/', form)
+      if (imageFile) {
+        const fd = new FormData()
+        fd.append('cover_image', imageFile)
+        await api.patch(`/blog/${created.slug}/`, fd)
+      }
+      setMessage('مطلب جدید ثبت شد.')
+      setForm(blank())
+      setImageFile(null)
+      onCreated()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  return <Card title="نوشتن مطلب جدید">
+    <form onSubmit={submit} className="form-grid compact">
+      <Field label="عنوان" value={form.title} onChange={(title) => setForm({ ...form, title })} required />
+      <label>دسته‌بندی
+        <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+          {BLOG_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </label>
+      <RichTextField label="متن مطلب (می‌توانی بین متن عکس اضافه کنی)" value={form.content_html} onChange={(content_html) => setForm({ ...form, content_html })} />
+      <Field label="لینک ویدئو (اختیاری)" value={form.video_url} onChange={(video_url) => setForm({ ...form, video_url })} />
+      <label>عکس کاور (اختیاری)
+        <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} />
+      </label>
+      <label className="blog-publish-check">
+        <input type="checkbox" checked={form.is_published} onChange={(e) => setForm({ ...form, is_published: e.target.checked })} />
+        <span>همین الان منتشر شود <small>(در غیر این صورت به‌عنوان پیش‌نویس ذخیره می‌شود)</small></span>
+      </label>
+      <button className="button primary" disabled={busy}><Plus size={16} /> ثبت مطلب</button>
+    </form>
+  </Card>
+}
+
+function BlogPage({ user }) {
+  const canManage = user.role === 'ADMIN' || user.role === 'TRAINER'
+  const [posts, setPosts] = useState([])
+  const [message, setMessage] = useState('')
+  const navigate = useNavigate()
+  const load = () => api.get('/blog/').then(({ data }) => setPosts(getItems(data))).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [])
+
+  return <section className="page-stack">
+    <PageTitle title="وبلاگ باشگاه" text="گزارش مسابقه‌ها، اخبار و مطالب آموزشی باشگاه." />
+    <Message text={message} />
+    {canManage && <BlogManager onCreated={load} setMessage={setMessage} />}
+    <Card title="مطالب">
+      {posts.length ? (
+        <div className="blog-grid">
+          {posts.map((post, i) => (
+            <motion.article className="blog-card" key={post.id} onClick={() => navigate(`/blog/${post.slug}`)} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, delay: i * .05 }}>
+              <div className="blog-card-image">
+                {post.cover_image ? <img src={post.cover_image} alt={post.title} /> : <Newspaper size={26} />}
+                {!post.is_published && <span className="blog-card-draft">پیش‌نویس</span>}
+              </div>
+              <div className="blog-card-body">
+                <span className="competition-card-tag">{blogCategoryLabel(post.category)}</span>
+                <h4>{post.title}</h4>
+                <p>{post.content.length > 90 ? `${post.content.slice(0, 90)}…` : post.content}</p>
+                <div className="competition-card-footer">
+                  <span>{post.author_name || 'باشگاه'}</span>
+                  <span>{formatDate(post.created_at)}</span>
+                </div>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+      ) : <Empty text="هنوز مطلبی منتشر نشده است." />}
+    </Card>
   </section>
 }
 
-function PlanSection({ title, kind, plans, canEdit, archive, onChanged, setMessage }) {
+function BlogPostDetail({ user }) {
+  const { slug } = useParams()
+  const navigate = useNavigate()
+  const canManage = user?.role === 'ADMIN' || user?.role === 'TRAINER'
+  const [post, setPost] = useState(null)
+  const [message, setMessage] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const load = () => api.get(`/blog/${slug}/`)
+    .then(({ data }) => { setPost(data); setDraft({ title: data.title, category: data.category, content_html: data.content_html || '', video_url: data.video_url || '', is_published: data.is_published }) })
+    .catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { setPost(null); setEditing(false); setConfirmDelete(false); load() }, [slug])
+
+  const save = async () => {
+    try {
+      const { data } = await api.patch(`/blog/${slug}/`, draft)
+      setMessage('مطلب به‌روزرسانی شد.')
+      setEditing(false)
+      // The slug is regenerated from the title, so editing the title moves
+      // the post to a new URL — follow it instead of 404ing on the old one.
+      if (data.slug && data.slug !== slug) navigate(`/blog/${data.slug}`, { replace: true })
+      else load()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+  const remove = async () => {
+    try { await api.delete(`/blog/${slug}/`); navigate('/blog', { replace: true }) }
+    catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  if (!post) return <section className="page-stack"><Message text={message} />{!message && <Empty text="در حال بارگذاری..." />}</section>
+  const embedUrl = youtubeEmbedUrl(post.video_url)
+
+  return <section className="page-stack blog-detail">
+    <div className="calendar-page-head">
+      <Link to="/blog" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به وبلاگ</Link>
+      {canManage && !editing && (
+        <div className="inline-form">
+          <button className="button muted" onClick={() => setEditing(true)}><Edit2 size={15} /> ویرایش</button>
+          <button className="button muted" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> حذف</button>
+        </div>
+      )}
+    </div>
+    <Message text={message} />
+
+    {confirmDelete && (
+      <div className="confirm-bar">
+        <span>این مطلب برای همیشه حذف شود؟</span>
+        <button className="button muted" onClick={() => setConfirmDelete(false)}>انصراف</button>
+        <button className="button danger" onClick={remove}><Trash2 size={15} /> بله، حذف کن</button>
+      </div>
+    )}
+
+    <Card>
+      {editing ? (
+        <div className="form-grid compact">
+          <Field label="عنوان" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} />
+          <label>دسته‌بندی
+            <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}>
+              {BLOG_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <RichTextField label="متن مطلب" value={draft.content_html} onChange={(content_html) => setDraft({ ...draft, content_html })} />
+          <Field label="لینک ویدئو (اختیاری)" value={draft.video_url} onChange={(video_url) => setDraft({ ...draft, video_url })} />
+          <label className="blog-publish-check">
+            <input type="checkbox" checked={draft.is_published} onChange={(e) => setDraft({ ...draft, is_published: e.target.checked })} />
+            <span>منتشر شده باشد</span>
+          </label>
+          <div className="inline-form">
+            <button className="button primary" onClick={save}><Check size={16} /> ذخیره تغییرات</button>
+            <button className="button muted" onClick={() => { setEditing(false); load() }}>انصراف</button>
+          </div>
+        </div>
+      ) : <>
+        {post.cover_image && <div className="blog-detail-cover"><img src={post.cover_image} alt={post.title} /></div>}
+        <div className="blog-detail-meta">
+          <span className="competition-card-tag">{blogCategoryLabel(post.category)}</span>
+          <span>{post.author_name || 'باشگاه'}</span>
+          <span>{formatDate(post.created_at)}</span>
+          {!post.is_published && <span className="blog-card-draft-inline">پیش‌نویس</span>}
+        </div>
+        <h2 className="blog-detail-title">{post.title}</h2>
+        <div className="blog-detail-content">
+          {post.content_html
+            ? <RichContent html={post.content_html} />
+            : post.content.split('\n').filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
+        </div>
+        {post.video_url && (embedUrl
+          ? <div className="video-embed-frame"><iframe src={embedUrl} title={post.title} allowFullScreen /></div>
+          : <a className="button primary" href={post.video_url} target="_blank" rel="noreferrer"><Video size={16} /> مشاهده ویدئو</a>)}
+      </>}
+    </Card>
+  </section>
+}
+
+/** Trainer's view of /calendar: the plan-building workspace. Members get
+ * `MyCalendarPage` instead — same route, completely different job. */
+function TrainerPlans({ user }) {
+  const [workouts, setWorkouts] = useState([]); const [diets, setDiets] = useState([]); const [assignments, setAssignments] = useState([]); const [message, setMessage] = useState('')
+  const load = () => Promise.all([api.get('/workout-plans/'), api.get('/diet-plans/'), api.get('/auth/assignments/')]).then(([a, b, c]) => { setWorkouts(getItems(a.data)); setDiets(getItems(b.data)); setAssignments(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
+  useEffect(() => { load() }, [user.role])
+  const archive = async (type, id) => { try { await api.post(`/${type}/${id}/archive/`); setMessage('برنامه بایگانی شد.'); load() } catch (e) { setMessage(errorMessage(e)) } }
+  const [editingDiet, setEditingDiet] = useState(null)
+  const savedDiet = (text) => { setMessage(text); setEditingDiet(null); load() }
+  return <section className="page-stack"><PageTitle title="برنامه‌سازی اعضا" text="برنامه‌های تمرین و رژیم اعضای تحت مربی‌گری‌ات." /><Message text={message} />
+    <WorkoutPlanBuilder assignments={assignments} onCreated={load} onError={setMessage} />
+    <DietPlanBuilder
+      key={editingDiet?.id || 'new'}
+      assignments={assignments}
+      editingPlan={editingDiet}
+      onSaved={savedDiet}
+      onCancelEdit={() => setEditingDiet(null)}
+      onError={setMessage}
+    />
+    <div className="content-grid"><PlanSection title="برنامه تمرینی" kind="workout-plans" plans={workouts} canEdit archive={archive} onChanged={load} setMessage={setMessage} /><PlanSection title="رژیم غذایی" kind="diet-plans" plans={diets} canEdit archive={archive} onChanged={load} setMessage={setMessage} onEditPlan={setEditingDiet} /></div>
+  </section>
+}
+
+/* Chip vocabulary for the calendar. Each kind owns one colour from the
+   zurkhaneh palette so a glance at the month tells you what sort of day it
+   is without reading a word. */
+const AGENDA_KINDS = {
+  workout: { label: 'تمرین', icon: Dumbbell, tone: 'glaze' },
+  class: { label: 'کلاس', icon: CalendarDays, tone: 'plum' },
+  event: { label: 'رویداد', icon: CalendarRange, tone: 'saffron' },
+  meal: { label: 'وعده غذایی', icon: Salad, tone: 'olive' },
+}
+
+/** The member's whole life in one month grid: workout days from their plan,
+ * classes they've booked, gym events, and (in the day panel only) the meals
+ * their diet plan calls for.
+ *
+ * Meals deliberately get no chip in the grid: a diet plan covers a
+ * continuous date range, so every single cell would carry one and the
+ * marker would say nothing. They appear in the agenda for the selected day,
+ * where they're actually actionable. */
+function MyCalendarPage({ user }) {
+  const navigate = useNavigate()
+  const [workouts, setWorkouts] = useState([])
+  const [diets, setDiets] = useState([])
+  const [bookings, setBookings] = useState([])
+  const [events, setEvents] = useState([])
+  const [message, setMessage] = useState('')
+  const [selectedDate, setSelectedDate] = useState(todayIso)
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/workout-plans/'), api.get('/diet-plans/'),
+      api.get('/bookings/'), api.get('/events/'),
+    ]).then(([w, d, b, e]) => {
+      setWorkouts(getItems(w.data)); setDiets(getItems(d.data))
+      setBookings(getItems(b.data)); setEvents(getItems(e.data))
+    }).catch((err) => setMessage(errorMessage(err)))
+  }, [])
+
+  // date -> { workouts, classes, events }. Meals are resolved per-day below
+  // because they're stored as a range on the plan, not as dated rows.
+  const dayMap = useMemo(() => {
+    const map = new Map()
+    const push = (date, kind, payload) => {
+      if (!date) return
+      if (!map.has(date)) map.set(date, { workouts: [], classes: [], events: [] })
+      map.get(date)[kind].push(payload)
+    }
+    workouts.filter((p) => !p.is_archived).forEach((plan) =>
+      (plan.days || []).forEach((day) => push(day.date, 'workouts', { plan, day })))
+    bookings.filter((b) => b.status === 'CONFIRMED').forEach((b) =>
+      push(b.session_detail?.session_date, 'classes', b))
+    events.forEach((e) => push(e.event_date, 'events', e))
+    return map
+  }, [workouts, bookings, events])
+
+  const mealsFor = (date) => diets
+    .filter((d) => !d.is_archived && d.start_date <= date && date <= d.end_date)
+    .flatMap((d) => (d.items || []).map((item) => ({ ...item, planTitle: d.title })))
+
+  const selected = dayMap.get(selectedDate) || { workouts: [], classes: [], events: [] }
+  const meals = mealsFor(selectedDate)
+
+  return <section className="page-stack calendar-page">
+    <div className="calendar-page-head">
+      <PageTitle title="تقویم من" text="تمرین‌ها، کلاس‌ها، رویدادها و وعده‌های غذایی هر روز، یکجا." />
+      <button className="button muted walk-cta" onClick={() => navigate('/walk')}><MapPin size={16} /> آغاز پیاده‌روی</button>
+    </div>
+    <Message text={message} />
+    <MonthCalendar dayMap={dayMap} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+    <DayAgenda date={selectedDate} data={selected} meals={meals} onStartWorkout={(planId, dayId) => navigate(`/workout/${planId}/${dayId}`)} />
+  </section>
+}
+
+/** Full-width month grid. Same Jalali maths as the compact calendar inside
+ * a plan modal, but each cell is a real surface that can carry chips. */
+function MonthCalendar({ dayMap, selectedDate, onSelectDate }) {
+  const today = new Date()
+  const [todayJy, todayJm] = gregorianToJalali(today.getFullYear(), today.getMonth() + 1, today.getDate())
+  const [viewYear, setViewYear] = useState(todayJy)
+  const [viewMonth, setViewMonth] = useState(todayJm)
+
+  const monthLen = jalaliMonthLength(viewYear, viewMonth)
+  const [firstGy, firstGm, firstGd] = jalaliToGregorian(viewYear, viewMonth, 1)
+  const firstWeekday = new Date(firstGy, firstGm - 1, firstGd).getDay()
+  const leadingBlanks = (firstWeekday + 1) % 7 // JS Sunday=0 -> Persian week starts Saturday
+
+  const cells = Array(leadingBlanks).fill(null)
+  for (let day = 1; day <= monthLen; day++) {
+    const [gy, gm, gd] = jalaliToGregorian(viewYear, viewMonth, day)
+    cells.push({ jDay: day, key: isoDate(gy, gm, gd) })
+  }
+  const monthLabel = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: 'long' }).format(new Date(firstGy, firstGm - 1, firstGd))
+  const todayKey = isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
+
+  const prevMonth = () => viewMonth === 1 ? (setViewYear(viewYear - 1), setViewMonth(12)) : setViewMonth(viewMonth - 1)
+  const nextMonth = () => viewMonth === 12 ? (setViewYear(viewYear + 1), setViewMonth(1)) : setViewMonth(viewMonth + 1)
+  const goToday = () => { setViewYear(todayJy); setViewMonth(todayJm); onSelectDate(todayKey) }
+
+  const chipsFor = (entry) => {
+    if (!entry) return []
+    return [
+      ...entry.workouts.map(({ day }) => ({ kind: 'workout', text: day.label || 'تمرین' })),
+      ...entry.classes.map((b) => ({ kind: 'class', text: b.session_detail.gym_class, time: b.session_detail.start_time?.slice(0, 5) })),
+      ...entry.events.map((e) => ({ kind: 'event', text: e.title })),
+    ]
+  }
+
+  return <section className="month-calendar">
+    <header className="month-calendar-head">
+      <div className="month-calendar-nav">
+        <button className="icon-button" onClick={nextMonth} aria-label="ماه بعد"><ChevronRight size={16} /></button>
+        <strong>{monthLabel}</strong>
+        <button className="icon-button" onClick={prevMonth} aria-label="ماه قبل"><ChevronLeft size={16} /></button>
+      </div>
+      <div className="month-calendar-legend">
+        {Object.entries(AGENDA_KINDS).filter(([k]) => k !== 'meal').map(([key, cfg]) => (
+          <span className="legend-item" key={key}><i className={`legend-dot tone-${cfg.tone}`} />{cfg.label}</span>
+        ))}
+        <button className="button muted month-today-btn" onClick={goToday}>امروز</button>
+      </div>
+    </header>
+    <div className="month-grid">
+      {WEEKDAY_LABELS_SAT_FIRST.map((w) => <span className="month-weekday" key={w}>{w}</span>)}
+      {cells.map((cell, i) => {
+        if (!cell) return <span className="month-cell empty" key={`empty-${i}`} />
+        const chips = chipsFor(dayMap.get(cell.key))
+        return (
+          <button
+            key={cell.key}
+            className={`month-cell ${cell.key === selectedDate ? 'selected' : ''} ${cell.key === todayKey ? 'today' : ''} ${chips.length ? 'has-items' : ''}`}
+            onClick={() => onSelectDate(cell.key)}
+          >
+            <span className="month-cell-date">{toPersianDigits(cell.jDay)}</span>
+            <span className="month-cell-chips">
+              {chips.slice(0, 3).map((chip, ci) => (
+                <span className={`month-chip tone-${AGENDA_KINDS[chip.kind].tone}`} key={ci}>
+                  {chip.time && <b>{toPersianDigits(chip.time)}</b>}{chip.text}
+                </span>
+              ))}
+              {chips.length > 3 && <span className="month-chip more">+{toPersianDigits(chips.length - 3)} مورد دیگر</span>}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  </section>
+}
+
+/** Everything happening on the selected day, grouped by kind, with the
+ * actions that belong to each (start the workout, see the class). */
+function DayAgenda({ date, data, meals, onStartWorkout }) {
+  const totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0)
+  const isEmpty = !data.workouts.length && !data.classes.length && !data.events.length && !meals.length
+
+  return <section className="day-agenda">
+    <header className="day-agenda-head">
+      <div>
+        <p className="eyebrow">برنامه روز</p>
+        <h3>{formatDate(date)}</h3>
+      </div>
+      {!!meals.length && <span className="capacity"><Flame size={13} /> {toPersianDigits(totalCalories)} کالری هدف</span>}
+    </header>
+
+    {isEmpty && <Empty text="برای این روز چیزی ثبت نشده است." />}
+
+    {data.workouts.map(({ plan, day }) => (
+      <article className="agenda-block tone-glaze" key={day.id}>
+        <div className="agenda-block-head">
+          <span className="agenda-icon"><Dumbbell size={18} /></span>
+          <div>
+            <strong>{day.label || 'تمرین امروز'}</strong>
+            <small>{plan.title} · {toPersianDigits(day.items.length)} حرکت</small>
+          </div>
+          <button className="button primary" onClick={() => onStartWorkout(plan.id, day.id)}><Play size={15} /> شروع تمرین</button>
+        </div>
+        <div className="agenda-exercises">
+          {day.items.map((item) => (
+            <span className="agenda-exercise" key={item.id}>
+              {item.exercise_name}<b>{toPersianDigits(item.sets)}×{toPersianDigits(item.reps)}</b>
+            </span>
+          ))}
+        </div>
+      </article>
+    ))}
+
+    {data.classes.map((b) => (
+      <article className="agenda-block tone-plum" key={`c-${b.id}`}>
+        <div className="agenda-block-head">
+          <span className="agenda-icon"><CalendarDays size={18} /></span>
+          <div>
+            <strong>{b.session_detail.gym_class}</strong>
+            <small>{b.session_detail.trainer} · {toPersianDigits(b.session_detail.start_time?.slice(0, 5))} تا {toPersianDigits(b.session_detail.end_time?.slice(0, 5))}</small>
+          </div>
+          <Link className="button muted" to="/classes">جزئیات کلاس</Link>
+        </div>
+      </article>
+    ))}
+
+    {data.events.map((e) => (
+      <article className="agenda-block tone-saffron" key={`e-${e.id}`}>
+        <div className="agenda-block-head">
+          <span className="agenda-icon"><CalendarRange size={18} /></span>
+          <div>
+            <strong>{e.title}</strong>
+            <small>{e.location || 'باشگاه تناسب'}</small>
+          </div>
+          <Link className="button muted" to="/events">جزئیات رویداد</Link>
+        </div>
+      </article>
+    ))}
+
+    {!!meals.length && (
+      <article className="agenda-block tone-olive">
+        <div className="agenda-block-head">
+          <span className="agenda-icon"><Salad size={18} /></span>
+          <div>
+            <strong>وعده‌های غذایی</strong>
+            <small>{meals[0].planTitle} · {toPersianDigits(meals.length)} وعده</small>
+          </div>
+        </div>
+        <div className="agenda-meals">
+          {meals.map((m) => (
+            <div className="agenda-meal" key={m.id}>
+              <div><strong>{m.meal_name}</strong>{m.description && <small>{m.description}</small>}</div>
+              <span className="capacity">{toPersianDigits(m.calories)} کالری</span>
+            </div>
+          ))}
+        </div>
+      </article>
+    )}
+  </section>
+}
+
+function PlanSection({ title, kind, plans, canEdit, archive, onChanged, setMessage, onEditPlan }) {
   const [openId, setOpenId] = useState(null)
   const openPlan = plans.find((plan) => plan.id === openId) || null
   const config = PLAN_KINDS[kind]
   return <>
     <Card title={title}>{plans.length ? plans.map((plan) => <PlanRow key={plan.id} plan={plan} config={config} onOpen={() => setOpenId(plan.id)} />) : <Empty text={`${title} موجود نیست.`} />}</Card>
     <AnimatePresence>
-      {openPlan && <PlanModal plan={openPlan} kind={kind} config={config} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} />}
+      {openPlan && <PlanModal plan={openPlan} kind={kind} config={config} canEdit={canEdit} onClose={() => setOpenId(null)} archive={archive} onChanged={onChanged} setMessage={setMessage} onEditPlan={onEditPlan} />}
     </AnimatePresence>
   </>
 }
@@ -1342,6 +2533,31 @@ function PlanRow({ plan, config, onOpen }) {
     <div><strong>{plan.title}</strong><small>{plan.trainer_name || plan.member_name} · تا {formatDate(plan.end_date)}</small></div>
     <span className="capacity">{planItemCount(plan, config)} {config.itemUnit}</span>
   </button>
+}
+
+/* CKEditor is bigger than the rest of the app combined and only
+   admins/trainers can ever open it, so it is fetched on demand rather than
+   shipped to every member. */
+const RichTextEditor = lazy(() => import('./RichTextEditor'))
+
+function RichTextField({ label, value, onChange }) {
+  return <label className="rich-editor-field">{label}
+    <Suspense fallback={<div className="rich-editor-loading">در حال بارگذاری ویرایشگر...</div>}>
+      <RichTextEditor value={value} onChange={onChange} />
+    </Suspense>
+  </label>
+}
+
+/** Renders rich text written in the editor.
+ *
+ *  `dangerouslySetInnerHTML` is safe HERE and only here because every write
+ *  path runs the HTML through bleach server-side (common/richtext.py) before
+ *  it is ever stored — scripts, event handlers and javascript:/data: URLs
+ *  are gone by the time this sees it. Never point this at text that hasn't
+ *  been through that. */
+function RichContent({ html, fallback }) {
+  if (!html || !html.trim()) return fallback ? <p className="empty">{fallback}</p> : null
+  return <div className="rich-content" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 function youtubeEmbedUrl(url) {
@@ -1397,9 +2613,9 @@ function WorkoutCalendar({ days, selectedDate, onSelectDate }) {
 }
 
 function WorkoutPlanCalendarView({ days, planId }) {
+  const navigate = useNavigate()
   const [selectedDate, setSelectedDate] = useState(days[0]?.date || null)
   const [detailItem, setDetailItem] = useState(null)
-  const [session, setSession] = useState(null)
   const selectedDay = days.find((d) => d.date === selectedDate)
 
   return <>
@@ -1409,7 +2625,7 @@ function WorkoutPlanCalendarView({ days, planId }) {
         <div className="plan-day-group">
           <div className="plan-day-group-head">
             <h4>{selectedDay.label || formatDate(selectedDay.date)}</h4>
-            <button className="button primary session-start-btn" onClick={() => setSession(selectedDay)}><Play size={15} /> شروع تمرین</button>
+            <button className="button primary session-start-btn" onClick={() => navigate(`/workout/${planId}/${selectedDay.id}`)}><Play size={15} /> شروع تمرین</button>
           </div>
           <div className="workout-exercise-grid">
             {selectedDay.items.map((item) => (
@@ -1427,7 +2643,6 @@ function WorkoutPlanCalendarView({ days, planId }) {
     ) : <Empty text="روزی با تمرین در این ماه ثبت نشده." />}
     <AnimatePresence>
       {detailItem && <ExerciseItemDetailModal item={detailItem} onClose={() => setDetailItem(null)} />}
-      {session && <WorkoutSessionModal day={session} planId={planId} onClose={() => setSession(null)} />}
     </AnimatePresence>
   </>
 }
@@ -1437,12 +2652,39 @@ function WorkoutPlanCalendarView({ days, planId }) {
  * the next exercise. Purely a live in-session guide (no history is
  * persisted) — the point is walking the member through *today's* session,
  * not building a training log. */
-function WorkoutSessionModal({ day, planId, onClose }) {
+function WorkoutRunPage() {
+  const { planId, dayId } = useParams()
+  const navigate = useNavigate()
+  const [day, setDay] = useState(null)
+  const [error, setError] = useState('')
+
+  // Re-fetched rather than handed through router state so the page survives
+  // a refresh or a shared link.
+  useEffect(() => {
+    api.get('/workout-plans/').then(({ data }) => {
+      const plan = getItems(data).find((p) => String(p.id) === String(planId))
+      const found = plan?.days?.find((d) => String(d.id) === String(dayId))
+      if (!found) { setError('این روز تمرینی پیدا نشد.'); return }
+      setDay(found)
+    }).catch((e) => setError(errorMessage(e)))
+  }, [planId, dayId])
+
+  if (error) return <section className="page-stack"><Link to="/calendar" className="blog-back-link"><ArrowLeft size={15} /> بازگشت به تقویم</Link><Message text={error} /></section>
+  if (!day) return <section className="page-stack"><Empty text="در حال بارگذاری تمرین..." /></section>
+  return <WorkoutRunner day={day} planId={planId} onExit={() => navigate('/calendar')} />
+}
+
+/** Guided run of one workout day — one exercise at a time, tap each set to
+ * check it off (which kicks off a 60s rest timer, skippable), then move on.
+ * A live guide, not a training log: only the finished session's duration
+ * and calories are persisted. */
+function WorkoutRunner({ day, planId, onExit }) {
   const [index, setIndex] = useState(0)
   const [completedSets, setCompletedSets] = useState(() => day.items.map((it) => Array(it.sets).fill(false)))
   const [restSeconds, setRestSeconds] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const [logged, setLogged] = useState(false)
+  const [detailItem, setDetailItem] = useState(null)
   const weightKg = useMemberWeight()
   const item = day.items[index]
   const finished = index >= day.items.length
@@ -1478,72 +2720,122 @@ function WorkoutSessionModal({ day, planId, onClose }) {
   const goPrev = () => { setRestSeconds(0); setIndex((i) => Math.max(0, i - 1)) }
 
   if (finished) {
-    return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .95 }}>
-        <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-        <CheckCircle2 size={52} className="session-complete-icon" />
+    return <section className="page-stack run-page">
+      <motion.div className="run-complete" initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }}>
+        <CheckCircle2 size={56} className="session-complete-icon" />
         <h2>تمرین امروز تموم شد! 💪</h2>
         <p>{toPersianDigits(day.items.length)} حرکت با موفقیت انجام شد. آفرین!</p>
         <div className="session-summary">
           <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>مدت زمان</small></div>
           <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری سوزانده شد</small></div>
         </div>
-        <button className="button primary" onClick={onClose}>بستن</button>
+        <button className="button primary" onClick={onExit}>بازگشت به تقویم</button>
       </motion.div>
-    </motion.div>
+    </section>
   }
 
   const doneCount = completedSets[index].filter(Boolean).length
+  const allSetsDone = doneCount === item.sets
 
-  return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-    <motion.div className="modal-card session-modal" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }}>
-      <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-      <div className="session-progress">
-        <div className="session-progress-bar"><motion.div animate={{ width: `${(index / day.items.length) * 100}%` }} /></div>
-        <div className="session-progress-foot">
-          <small>حرکت {toPersianDigits(index + 1)} از {toPersianDigits(day.items.length)}</small>
-          <small className="session-live-timer"><Timer size={12} /> {formatDuration(elapsed)}</small>
+  return <section className="page-stack run-page">
+    <div className="run-topbar">
+      <button className="blog-back-link" onClick={onExit}><ArrowLeft size={15} /> پایان و خروج</button>
+      <span className="run-timer"><Timer size={15} /> {formatDuration(elapsed)}</span>
+    </div>
+
+    <div className="run-progress">
+      <div className="run-progress-bar"><motion.div animate={{ width: `${(index / day.items.length) * 100}%` }} transition={{ duration: .3 }} /></div>
+      <small>حرکت {toPersianDigits(index + 1)} از {toPersianDigits(day.items.length)} · {day.label || 'تمرین امروز'}</small>
+    </div>
+
+    <div className="run-stage">
+      <div className="run-main">
+        <p className="eyebrow">{muscleGroupLabel(item.muscle_group)}</p>
+        <h2 className="run-exercise-name">{item.exercise_name}</h2>
+        <p className="run-target">هدف: {toPersianDigits(item.sets)} ست × {toPersianDigits(item.reps)} تکرار</p>
+        {item.notes && <p className="session-notes">{item.notes}</p>}
+
+        <p className="run-sets-label">روی هر ست بزن تا تیک بخورد</p>
+        <div className="run-sets">
+          {completedSets[index].map((done, i) => (
+            <button key={i} className={`run-set ${done ? 'done' : ''}`} onClick={() => toggleSet(i)}>
+              {done ? <CheckCircle2 size={22} /> : <span>{toPersianDigits(i + 1)}</span>}
+              <small>ست {toPersianDigits(i + 1)}</small>
+            </button>
+          ))}
+        </div>
+
+        <AnimatePresence>
+          {restSeconds > 0 && (
+            <motion.div className="session-rest" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+              <span><Timer size={15} /> استراحت: {toPersianDigits(restSeconds)} ثانیه</span>
+              <button className="text-button" onClick={() => setRestSeconds(0)}><SkipForward size={13} /> رد کردن</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="session-nav">
+          <button className="button muted" onClick={goPrev} disabled={index === 0}>حرکت قبلی</button>
+          <button className="button primary" onClick={goNext}>{index === day.items.length - 1 ? 'پایان تمرین' : 'حرکت بعدی'} <ChevronLeft size={16} /></button>
         </div>
       </div>
-      <h2>{item.exercise_name}</h2>
-      <p className="plan-modal-meta">{muscleGroupLabel(item.muscle_group)} · هدف: {item.sets}×{item.reps} · {toPersianDigits(doneCount)}/{toPersianDigits(item.sets)} ست انجام شد</p>
-      {item.notes && <p className="session-notes">{item.notes}</p>}
-      <div className="session-sets">
-        {completedSets[index].map((done, i) => (
-          <button key={i} className={`session-set ${done ? 'done' : ''}`} onClick={() => toggleSet(i)}>
-            {done ? <CheckCircle2 size={18} /> : <span>{toPersianDigits(i + 1)}</span>}
-          </button>
-        ))}
-      </div>
-      <AnimatePresence>
-        {restSeconds > 0 && (
-          <motion.div className="session-rest" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-            <span><Timer size={15} /> استراحت: {toPersianDigits(restSeconds)} ثانیه</span>
-            <button className="text-button" onClick={() => setRestSeconds(0)}><SkipForward size={13} /> رد کردن</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <div className="session-nav">
-        <button className="button muted" onClick={goPrev} disabled={index === 0}>حرکت قبلی</button>
-        <button className="button primary" onClick={goNext}>{index === day.items.length - 1 ? 'پایان تمرین' : 'حرکت بعدی'} <ChevronLeft size={16} /></button>
-      </div>
-    </motion.div>
-  </motion.div>
+
+      <aside className="run-side">
+        <MuscleDiagram selected={item.muscle_group} size={120} />
+        {item.video_url && <button className="button muted" onClick={() => setDetailItem(item)}><Video size={15} /> نمایش ویدئوی حرکت</button>}
+        <div className="run-uplist">
+          <p className="eyebrow">حرکت‌های این جلسه</p>
+          {day.items.map((it, i) => (
+            <button key={it.id} className={`run-uplist-row ${i === index ? 'current' : ''} ${i < index ? 'passed' : ''}`} onClick={() => { setRestSeconds(0); setIndex(i) }}>
+              <span>{toPersianDigits(i + 1)}</span>
+              <div><strong>{it.exercise_name}</strong><small>{toPersianDigits(it.sets)}×{toPersianDigits(it.reps)}</small></div>
+              {i < index && <CheckCircle2 size={15} />}
+            </button>
+          ))}
+        </div>
+      </aside>
+    </div>
+    {allSetsDone && restSeconds === 0 && <p className="run-hint">همه ست‌های این حرکت انجام شد — برو حرکت بعدی 👇</p>}
+    <AnimatePresence>
+      {detailItem && <ExerciseItemDetailModal item={detailItem} onClose={() => setDetailItem(null)} />}
+    </AnimatePresence>
+  </section>
 }
 
 /** GPS-tracked walk/run — accumulates distance from consecutive
  * geolocation fixes (haversine, with a small jitter filter) while a live
  * timer and calorie estimate run alongside it. */
-function WalkingTrackerModal({ onClose }) {
+// Beyond this, a "position" is wifi/cell triangulation rather than GPS —
+// useless for measuring a walk and actively harmful if counted.
+const MAX_USABLE_ACCURACY_M = 40
+
+/** Turns a raw accuracy reading into something a person can act on. */
+function gpsSignal(accuracy, fixCount) {
+  if (!fixCount) return { key: 'waiting', label: 'در حال گرفتن سیگنال ماهواره...', hint: 'چند لحظه صبر کن' }
+  if (accuracy == null) return { key: 'waiting', label: 'در حال گرفتن سیگنال...', hint: '' }
+  if (accuracy <= 10) return { key: 'good', label: `سیگنال خوب (±${Math.round(accuracy)} متر)`, hint: '' }
+  if (accuracy <= MAX_USABLE_ACCURACY_M) return { key: 'fair', label: `سیگنال متوسط (±${Math.round(accuracy)} متر)`, hint: 'مسافت با خطا ثبت می‌شود' }
+  return {
+    key: 'weak',
+    label: `سیگنال ضعیف (±${Math.round(accuracy)} متر)`,
+    hint: 'داخل ساختمان GPS کار نمی‌کند — برای ثبت مسافت باید بیرون باشی',
+  }
+}
+
+function WalkPage() {
+  const navigate = useNavigate()
   const [active, setActive] = useState(false)
   const [finished, setFinished] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [distanceKm, setDistanceKm] = useState(0)
   const [error, setError] = useState('')
   const weightKg = useMemberWeight()
+  const [accuracy, setAccuracy] = useState(null)
+  const [fixCount, setFixCount] = useState(0)
   const watchIdRef = useRef(null)
   const lastPosRef = useRef(null)
   const calories = estimateCalories('WALK', weightKg, elapsed)
+  const signal = gpsSignal(accuracy, fixCount)
 
   useEffect(() => {
     if (!active) return
@@ -1559,22 +2851,37 @@ function WalkingTrackerModal({ onClose }) {
     navigator.geolocation.getCurrentPosition(
       () => {
         lastPosRef.current = null
-        setDistanceKm(0); setElapsed(0); setActive(true)
+        setDistanceKm(0); setElapsed(0); setAccuracy(null); setFixCount(0); setActive(true)
         watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
-            const { latitude, longitude } = pos.coords
-            if (lastPosRef.current) {
-              const d = haversineKm(lastPosRef.current.lat, lastPosRef.current.lon, latitude, longitude)
-              if (d > 0.002) { // ignore GPS jitter under ~2m so distance doesn't creep while standing still
-                setDistanceKm((prev) => prev + d)
-                lastPosRef.current = { lat: latitude, lon: longitude }
-              }
-            } else {
+            const { latitude, longitude, accuracy: acc } = pos.coords
+            setAccuracy(acc)
+            setFixCount((n) => n + 1)
+
+            // A fix this vague is wifi/cell triangulation, not GPS. Two such
+            // readings can differ by tens of metres without anyone moving, so
+            // counting them would invent distance out of noise.
+            if (acc > MAX_USABLE_ACCURACY_M) return
+
+            if (!lastPosRef.current) { lastPosRef.current = { lat: latitude, lon: longitude }; return }
+            const km = haversineKm(lastPosRef.current.lat, lastPosRef.current.lon, latitude, longitude)
+            // Deadband scaled to the fix's own uncertainty rather than a flat
+            // 2m: a reading accurate to ±20m can't evidence a 3m step, so
+            // requiring the movement to exceed the error is what separates
+            // real walking from jitter.
+            const thresholdKm = Math.max(0.003, (acc * 0.75) / 1000)
+            if (km > thresholdKm) {
+              setDistanceKm((prev) => prev + km)
               lastPosRef.current = { lat: latitude, lon: longitude }
             }
           },
-          () => setError('دریافت موقعیت مکانی با خطا مواجه شد.'),
-          { enableHighAccuracy: true, maximumAge: 5000 },
+          (e) => setError(e.code === 3
+            ? 'سیگنال موقعیت‌یاب پیدا نشد. اگر داخل ساختمانی، برو فضای باز.'
+            : 'دریافت موقعیت مکانی با خطا مواجه شد.'),
+          // maximumAge:0 — the old value (5000) let the browser hand back the
+          // SAME cached fix on consecutive callbacks, so the delta was zero
+          // and the distance never moved. Live tracking needs fresh fixes.
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
         )
       },
       () => setError('دسترسی به موقعیت مکانی داده نشد. از تنظیمات مرورگر اجازه بده.'),
@@ -1594,29 +2901,36 @@ function WalkingTrackerModal({ onClose }) {
   }
 
   if (finished) {
-    return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: .95 }}>
-        <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
-        <CheckCircle2 size={52} className="session-complete-icon" />
+    return <section className="page-stack run-page">
+      <motion.div className="run-complete" initial={{ opacity: 0, scale: .95 }} animate={{ opacity: 1, scale: 1 }}>
+        <CheckCircle2 size={56} className="session-complete-icon" />
         <h2>پیاده‌روی ثبت شد! 🚶</h2>
         <div className="session-summary">
           <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>مدت زمان</small></div>
           <div><MapPin size={16} /><strong>{distanceKm.toFixed(2)}</strong><small>کیلومتر</small></div>
           <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری</small></div>
         </div>
-        <button className="button primary" onClick={onClose}>بستن</button>
+        <button className="button primary" onClick={() => navigate('/calendar')}>بازگشت به تقویم</button>
       </motion.div>
-    </motion.div>
+    </section>
   }
 
-  return <motion.div className="modal-overlay" onClick={!active ? onClose : undefined} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-    <motion.div className="modal-card session-complete" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }}>
-      {!active && <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>}
-      <span className="icon-chip on-tile walk-tracker-icon"><MapPin size={26} /></span>
+  return <section className="page-stack run-page">
+    {!active && <button className="blog-back-link" onClick={() => navigate('/calendar')}><ArrowLeft size={15} /> بازگشت به تقویم</button>}
+    <motion.div className={`walk-stage ${active ? 'live' : ''}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+      <span className="walk-orb"><MapPin size={30} /></span>
       {active ? (
         <>
+          <p className="eyebrow">در حال ضبط مسیر</p>
           <h2>در حال پیاده‌روی...</h2>
-          <div className="session-summary">
+          <div className={`gps-signal gps-${signal.key}`}>
+            <span className="gps-dot" />
+            <div>
+              <strong>{toPersianDigits(signal.label)}</strong>
+              {signal.hint && <small>{signal.hint}</small>}
+            </div>
+          </div>
+          <div className="session-summary walk-summary">
             <div><Timer size={16} /><strong>{formatDuration(elapsed)}</strong><small>زمان</small></div>
             <div><MapPin size={16} /><strong>{distanceKm.toFixed(2)}</strong><small>کیلومتر</small></div>
             <div><Flame size={16} /><strong>{toPersianDigits(calories)}</strong><small>کالری</small></div>
@@ -1627,24 +2941,22 @@ function WalkingTrackerModal({ onClose }) {
       ) : (
         <>
           <h2>شروع پیاده‌روی</h2>
-          <p>مسیر و مسافت پیاده‌روی‌ات با موقعیت مکانی گوشی ثبت می‌شود.</p>
+          <p>مسیر و مسافت پیاده‌روی‌ات با موقعیت مکانی گوشی ثبت می‌شود و کالری سوزانده‌شده به آمار امروزت اضافه می‌شود.</p>
           {error && <p className="form-error">{error}</p>}
           <button className="button primary" onClick={start}><Play size={16} /> شروع کن</button>
         </>
       )}
     </motion.div>
-  </motion.div>
+  </section>
 }
 
 function ExerciseItemDetailModal({ item, onClose }) {
   const embedUrl = youtubeEmbedUrl(item.video_url)
   return <motion.div className="modal-overlay" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }}>
-    <motion.div className="modal-card" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
+    <motion.div className="modal-card modal-card-media" onClick={(e) => e.stopPropagation()} initial={{ opacity: 0, scale: .94, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, y: 8 }} transition={{ duration: .2, ease: 'easeOut' }}>
       <button className="icon-button modal-close" onClick={onClose}><X size={17} /></button>
       <h2>{item.exercise_name}</h2>
       <p className="plan-modal-meta">{item.sets}×{item.reps} تکرار{item.notes && ` · ${item.notes}`}</p>
-      <MuscleDiagram selected={item.muscle_group} />
-      <p className="muscle-diagram-caption">این حرکت روی «{muscleGroupLabel(item.muscle_group)}» فشار وارد می‌کند.</p>
       {item.video_url ? (
         embedUrl ? (
           <div className="video-embed-frame"><iframe src={embedUrl} title={item.exercise_name} allowFullScreen /></div>
@@ -1652,11 +2964,13 @@ function ExerciseItemDetailModal({ item, onClose }) {
           <a className="button primary" href={item.video_url} target="_blank" rel="noreferrer"><Video size={16} /> مشاهده ویدئوی آموزشی</a>
         )
       ) : <p className="empty">ویدئوی آموزشی برای این حرکت ثبت نشده.</p>}
+      <MuscleDiagram selected={item.muscle_group} size={110} />
+      <p className="muscle-diagram-caption">این حرکت روی «{muscleGroupLabel(item.muscle_group)}» فشار وارد می‌کند.</p>
     </motion.div>
   </motion.div>
 }
 
-function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, setMessage }) {
+function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, setMessage, onEditPlan }) {
   const [uploading, setUploading] = useState(false)
   const [zoomed, setZoomed] = useState(false)
   const fileInputRef = useRef(null)
@@ -1697,7 +3011,10 @@ function PlanModal({ plan, kind, config, canEdit, onClose, archive, onChanged, s
       ) : (
         <div className="plan-modal-items">{plan.items?.map((item) => <div className="plan-modal-item" key={item.id}><div>{config.itemLine(item)}</div><span className="capacity">{config.itemStat(item)}</span></div>)}</div>
       )}
-      {canEdit && !plan.is_archived && <button className="button muted" onClick={() => { archive(kind, plan.id); onClose() }}><Settings size={16} /> بایگانی این {config.label}</button>}
+      {canEdit && !plan.is_archived && <div className="inline-form">
+        {onEditPlan && <button className="button muted" onClick={() => { onEditPlan(plan); onClose() }}><Edit2 size={16} /> ویرایش</button>}
+        <button className="button muted" onClick={() => { archive(kind, plan.id); onClose() }}><Settings size={16} /> بایگانی این {config.label}</button>
+      </div>}
     </motion.div>
   </motion.div>
 }
@@ -1721,25 +3038,121 @@ function Progress() {
     value: entry[factor] === null || entry[factor] === undefined ? null : Number(entry[factor]),
   }))
 
-  return <section className="page-stack"><PageTitle title="پیشرفت بدن" text="اعداد کوچک، تغییرهای بزرگ می‌سازند." /><Message text={message} /><div className="content-grid"><Card title="ثبت اندازه‌گیری"><form onSubmit={submit} className="form-grid compact"><Field label="تاریخ" type="date" value={form.recorded_at} onChange={(recorded_at) => setForm({ ...form, recorded_at })} required /><Field label="وزن (کیلوگرم)" type="number" value={form.weight_kg} onChange={(weight_kg) => setForm({ ...form, weight_kg })} required /><Field label="چربی بدن (%)" type="number" value={form.body_fat_percent} onChange={(body_fat_percent) => setForm({ ...form, body_fat_percent })} /><Field label="دور کمر (سانتی‌متر)" type="number" value={form.waist_cm} onChange={(waist_cm) => setForm({ ...form, waist_cm })} /><button className="button primary">ثبت پیشرفت <Plus size={17} /></button></form></Card><Card title="روند پیشرفت" actionButton={<div className="factor-toggle">{PROGRESS_FACTORS.map((item) => <button key={item.key} className={item.key === factor ? 'chip active' : 'chip'} onClick={() => setFactor(item.key)}>{item.label}</button>)}</div>}>{entries.length ? <><div className="progress-chart"><ResponsiveContainer width="100%" height={220}><AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}><defs><linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} /><stop offset="100%" stopColor="var(--accent)" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} /><YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={40} domain={['auto', 'auto']} /><Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ color: 'var(--ink)' }} formatter={(value) => [`${value} ${activeFactor.unit}`, activeFactor.label]} /><Area type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} fill="url(#progressFill)" connectNulls dot={{ r: 3, fill: 'var(--accent)', strokeWidth: 0 }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div><div className="progress-list">{entries.map((entry) => <div className="progress-row" key={entry.id}><div><strong>{formatDate(entry.recorded_at)}</strong><small>{entry.notes || 'یادداشتی ثبت نشده'}</small></div><div className="progress-values"><span>{entry.weight_kg} kg</span><span>{entry.body_fat_percent ?? '—'}%</span><span>{entry.waist_cm ?? '—'} cm</span></div></div>)}</div></> : <Empty text="اولین اندازه‌گیری را ثبت کن." />}</Card></div></section>
+  return <section className="page-stack"><PageTitle title="پیشرفت بدن" text="اعداد کوچک، تغییرهای بزرگ می‌سازند." /><Message text={message} /><div className="content-grid"><Card title="ثبت اندازه‌گیری"><form onSubmit={submit} className="form-grid compact"><JalaliDateField label="تاریخ" value={form.recorded_at} onChange={(recorded_at) => setForm({ ...form, recorded_at })} required /><Field label="وزن (کیلوگرم)" type="number" value={form.weight_kg} onChange={(weight_kg) => setForm({ ...form, weight_kg })} required /><Field label="چربی بدن (%)" type="number" value={form.body_fat_percent} onChange={(body_fat_percent) => setForm({ ...form, body_fat_percent })} /><Field label="دور کمر (سانتی‌متر)" type="number" value={form.waist_cm} onChange={(waist_cm) => setForm({ ...form, waist_cm })} /><button className="button primary">ثبت پیشرفت <Plus size={17} /></button></form></Card><Card title="روند پیشرفت" actionButton={<div className="factor-toggle">{PROGRESS_FACTORS.map((item) => <button key={item.key} className={item.key === factor ? 'chip active' : 'chip'} onClick={() => setFactor(item.key)}>{item.label}</button>)}</div>}>{entries.length ? <><div className="progress-chart"><ResponsiveContainer width="100%" height={220}><AreaChart data={chartData} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}><defs><linearGradient id="progressFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--accent)" stopOpacity={0.35} /><stop offset="100%" stopColor="var(--accent)" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} /><YAxis stroke="var(--muted-2)" fontSize={11} tickLine={false} axisLine={false} width={40} domain={['auto', 'auto']} /><Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ color: 'var(--ink)' }} formatter={(value) => [`${value} ${activeFactor.unit}`, activeFactor.label]} /><Area type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={2} fill="url(#progressFill)" connectNulls dot={{ r: 3, fill: 'var(--accent)', strokeWidth: 0 }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div><div className="progress-list">{entries.map((entry) => <div className="progress-row" key={entry.id}><div><strong>{formatDate(entry.recorded_at)}</strong><small>{entry.notes || 'یادداشتی ثبت نشده'}</small></div><div className="progress-values"><span>{entry.weight_kg} kg</span><span>{entry.body_fat_percent ?? '—'}%</span><span>{entry.waist_cm ?? '—'} cm</span></div></div>)}</div></> : <Empty text="اولین اندازه‌گیری را ثبت کن." />}</Card></div></section>
 }
 
 function Messages({ user }) {
   const [assignments, setAssignments] = useState([]); const [partner, setPartner] = useState(''); const [messages, setMessages] = useState([]); const [content, setContent] = useState(''); const [message, setMessage] = useState('')
   useEffect(() => { api.get('/auth/assignments/').then(({ data }) => { const items = getItems(data); setAssignments(items); if (items[0]) setPartner(String(user.role === 'MEMBER' ? items[0].trainer_user_id : items[0].member_user_id)) }).catch((e) => setMessage(errorMessage(e))) }, [user.role])
   useEffect(() => { if (partner) { api.get(`/messages/?with=${partner}`).then(({ data }) => setMessages(getItems(data))).catch((e) => setMessage(errorMessage(e))); api.post('/messages/mark-read/', { with: partner }).catch(() => {}) } }, [partner])
-  const send = async (event) => { event.preventDefault(); if (!content) return; try { await api.post('/messages/send/', { receiver: partner, content }); setContent(''); const { data } = await api.get(`/messages/?with=${partner}`); setMessages(getItems(data)) } catch (e) { setMessage(errorMessage(e)) } }
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [confirmId, setConfirmId] = useState(null)
+  const reload = async () => { const { data } = await api.get(`/messages/?with=${partner}`); setMessages(getItems(data)) }
+  const send = async (event) => { event.preventDefault(); if (!content) return; try { await api.post('/messages/send/', { receiver: partner, content }); setContent(''); await reload() } catch (e) { setMessage(errorMessage(e)) } }
+  const saveEdit = async (id) => {
+    if (!editDraft.trim()) return
+    try { await api.patch(`/messages/${id}/`, { content: editDraft }); setEditingId(null); await reload() }
+    catch (e) { setMessage(errorMessage(e)) }
+  }
+  const removeMessage = async (id) => {
+    try { await api.delete(`/messages/${id}/`); setConfirmId(null); await reload() }
+    catch (e) { setMessage(errorMessage(e)) }
+  }
   const label = (item) => user.role === 'MEMBER' ? item.trainer_name : item.member_name
   const partnerId = (item) => String(user.role === 'MEMBER' ? item.trainer_user_id : item.member_user_id)
-  return <section className="page-stack"><PageTitle title="گفت‌وگو با مربی" text="سؤال‌ها، بازخوردها و همراهی روزانه." /><Message text={message} /><div className="chat-layout "><aside>{assignments.map((item) => <button className={partnerId(item) === partner ? 'chat-person active' : 'chat-person'} key={item.id} onClick={() => setPartner(partnerId(item))}><span className="avatar">{label(item)?.[0]}</span>{label(item)}</button>)}</aside><section className="chat-window">{partner ? <><div className="chat-messages">{messages.map((item) => <div className={item.sender === user.id ? 'bubble mine' : 'bubble'} key={item.id}>{item.content}<small>{new Date(item.sent_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</small></div>)}</div><form className="chat-form" onSubmit={send}><input value={content} onChange={(e) => setContent(e.target.value)} placeholder="پیامت را بنویس..." /><button className="button primary"><MessageCircle size={18} /></button></form></> : <Empty text="مخاطبی برای گفت‌وگو پیدا نشد." />}</section></div></section>
+  return <section className="page-stack"><PageTitle title="گفت‌وگو با مربی" text="سؤال‌ها، بازخوردها و همراهی روزانه." /><Message text={message} /><div className="chat-layout "><aside>{assignments.map((item) => <button className={partnerId(item) === partner ? 'chat-person active' : 'chat-person'} key={item.id} onClick={() => setPartner(partnerId(item))}><span className="avatar">{label(item)?.[0]}</span>{label(item)}</button>)}</aside><section className="chat-window">{partner ? <><div className="chat-messages">{messages.map((item) => {
+      const mine = item.sender === user.id
+      if (editingId === item.id) return <div className="bubble mine bubble-editing" key={item.id}>
+        <input value={editDraft} onChange={(e) => setEditDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(item.id); if (e.key === 'Escape') setEditingId(null) }} autoFocus />
+        <div className="bubble-actions">
+          <button className="text-button" onClick={() => saveEdit(item.id)}>ذخیره</button>
+          <button className="text-button" onClick={() => setEditingId(null)}>انصراف</button>
+        </div>
+      </div>
+      return <div className={mine ? 'bubble mine' : 'bubble'} key={item.id}>
+        {item.content}
+        <small>
+          {new Date(item.sent_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+          {item.edited_at && <span className="bubble-edited"> · ویرایش شده</span>}
+        </small>
+        {/* Only your own words are yours to change. */}
+        {mine && (confirmId === item.id
+          ? <div className="bubble-actions"><span>حذف شود؟</span>
+              <button className="text-button danger-text" onClick={() => removeMessage(item.id)}>بله</button>
+              <button className="text-button" onClick={() => setConfirmId(null)}>خیر</button>
+            </div>
+          : <div className="bubble-actions">
+              <button className="icon-button bubble-btn" title="ویرایش" onClick={() => { setEditingId(item.id); setEditDraft(item.content) }}><Edit2 size={12} /></button>
+              <button className="icon-button bubble-btn" title="حذف" onClick={() => setConfirmId(item.id)}><Trash2 size={12} /></button>
+            </div>)}
+      </div>
+    })}</div><form className="chat-form" onSubmit={send}><input value={content} onChange={(e) => setContent(e.target.value)} placeholder="پیامت را بنویس..." /><button className="button primary"><MessageCircle size={18} /></button></form></> : <Empty text="مخاطبی برای گفت‌وگو پیدا نشد." />}</section></div></section>
 }
 
-function Notifications() {
+function Notifications({ user }) {
+  const admin = user.role === 'ADMIN'
   const [items, setItems] = useState([]); const [message, setMessage] = useState('')
   const load = () => api.get('/notifications/').then(({ data }) => setItems(getItems(data))).catch((e) => setMessage(errorMessage(e)))
   useEffect(() => { load() }, [])
   const read = async (id) => { await api.post(`/notifications/${id}/read/`); load() }
-  return <section className="page-stack"><PageTitle title="اعلان‌ها" text="هر چیزی که لازم است بدانید، همین‌جاست." /><Message text={message} /><Card title="همه اعلان‌ها" actionButton={<button className="text-button" onClick={() => api.post('/notifications/read-all/').then(load)}>خواندن همه</button>}>{items.map((item) => <button className={`notification-item ${item.is_read ? '' : 'unread'}`} onClick={() => read(item.id)} key={item.id}><span className="notice-dot" /><div><strong>{item.title}</strong><small>{item.message}</small></div><time>{formatDate(item.created_at)}</time></button>) || <Empty text="اعلانی وجود ندارد." />}</Card></section>
+  return <section className="page-stack"><PageTitle title="اعلان‌ها" text="هر چیزی که لازم است بدانید، همین‌جاست." /><Message text={message} />
+    {admin && <NotificationBroadcastPanel setMessage={setMessage} onSent={load} />}
+    <Card title="همه اعلان‌ها" actionButton={<button className="text-button" onClick={() => api.post('/notifications/read-all/').then(load)}>خواندن همه</button>}>{items.map((item) => <button className={`notification-item ${item.is_read ? '' : 'unread'}`} onClick={() => read(item.id)} key={item.id}><span className="notice-dot" /><div><strong>{item.title}</strong><small>{item.message}</small></div><time>{formatDate(item.created_at)}</time></button>) || <Empty text="اعلانی وجود ندارد." />}</Card></section>
+}
+
+/** Admin-only: broadcast an announcement to the whole gym (in-app, plus a
+ * real SMS if checked — the checkbox says plainly that it costs real
+ * credit, since sms.ir bills per send), and a manual "send now" for
+ * tomorrow's session reminders alongside the cron job that normally
+ * handles it. */
+function NotificationBroadcastPanel({ setMessage, onSent }) {
+  const blank = () => ({ title: '', message: '', audience: 'ALL', send_sms: false })
+  const [form, setForm] = useState(blank())
+  const [busy, setBusy] = useState(false)
+  const [remindBusy, setRemindBusy] = useState(false)
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const { data } = await api.post('/notifications/broadcast/', form)
+      setMessage(form.send_sms
+        ? `اطلاعیه به ${data.notified} نفر ارسال شد (${data.sms_sent} پیامک واقعی از ${data.sms_attempted} تلاش).`
+        : `اطلاعیه به ${data.notified} نفر ارسال شد.`)
+      setForm(blank())
+      onSent()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  const sendReminders = async () => {
+    setRemindBusy(true)
+    try {
+      const { data } = await api.post('/attendance/send-reminders/')
+      setMessage(`یادآوری جلسات فردا (${formatDate(data.date)}) برای ${data.notified} نفر ارسال شد (${data.sms_sent} پیامک واقعی).`)
+    } catch (e) { setMessage(errorMessage(e)) } finally { setRemindBusy(false) }
+  }
+
+  return <Card title="ارسال اطلاعیه به اعضا">
+    <form onSubmit={submit} className="form-grid compact">
+      <Field label="عنوان" value={form.title} onChange={(title) => setForm({ ...form, title })} required />
+      <label>متن پیام<textarea rows={3} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} required /></label>
+      <label>مخاطب<select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}>
+        <option value="ALL">همه اعضا و مربی‌ها</option>
+        <option value="MEMBERS">فقط اعضا</option>
+        <option value="TRAINERS">فقط مربی‌ها</option>
+      </select></label>
+      <label className="broadcast-sms-check">
+        <input type="checkbox" checked={form.send_sms} onChange={(e) => setForm({ ...form, send_sms: e.target.checked })} />
+        <span>ارسال پیامک واقعی هم بشود <small>(هزینه پیامک از حساب باشگاه کسر می‌شود)</small></span>
+      </label>
+      <button className="button primary" disabled={busy}><Send size={16} /> ارسال اطلاعیه</button>
+    </form>
+    <div className="broadcast-reminder-row">
+      <div><strong>یادآوری جلسات فردا</strong><small>برای همه رزروهای تأییدشده‌ی فردا، همین حالا یادآوری بفرست (کار روزانه‌اش خودکار هم اجرا می‌شود).</small></div>
+      <button className="button muted" onClick={sendReminders} disabled={remindBusy}><Bell size={15} /> ارسال الان</button>
+    </div>
+  </Card>
 }
 
 function TrainerPanel() {
@@ -1765,14 +3178,108 @@ function AdminPanel() {
   const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [trends, setTrends] = useState(null); const [message, setMessage] = useState('')
   const [users, setUsers] = useState([]); const [members, setMembers] = useState([]); const [trainers, setTrainers] = useState([])
   const loadUsers = () => Promise.all([api.get('/auth/users/'), api.get('/auth/members/'), api.get('/auth/trainers/')]).then(([a, b, c]) => { setUsers(getItems(a.data)); setMembers(getItems(b.data)); setTrainers(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
+  const [overview, setOverview] = useState(null)
   useEffect(() => {
     Promise.all([api.get('/reports/subscriptions/'), api.get('/reports/revenue/'), api.get('/reports/attendance/'), api.get('/reports/popular/')]).then(([a, b, c, d]) => setReports({ subscriptions: a.data, revenue: b.data, attendance: getItems(c.data), popular: d.data })).catch((e) => setMessage(errorMessage(e)))
     api.get('/reports/trends/').then(({ data }) => setTrends(data)).catch(() => {})
+    api.get('/reports/overview/').then(({ data }) => setOverview(data)).catch(() => {})
     loadUsers()
   }, [])
   return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} color="blue" /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} color="green" /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} color="purple" /></section>
+    {overview && <AnalyticsOverview data={overview} />}
     {trends && <AnalyticsCharts trends={trends} />}
     <div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
+}
+
+/** The operational half of the admin report: rates rather than totals, and
+ * two lists that are actually a to-do — who to call before they quit, and
+ * whose subscription is about to lapse. */
+function AnalyticsOverview({ data }) {
+  const k = data.kpis
+  const rates = [
+    { label: 'نرخ حضور', value: k.attendance_rate, hint: 'از رزروها چند نفر واقعاً آمدند', good: k.attendance_rate >= 70 },
+    { label: 'نرخ پر شدن ظرفیت', value: k.fill_rate, hint: 'از کل ظرفیت جلسات چقدر رزرو شد', good: k.fill_rate >= 50 },
+    // `good` already encodes direction per metric — high attendance is good,
+    // high churn is not — so there's no separate invert flag.
+    { label: 'نرخ ریزش', value: k.churn_rate, hint: `${toPersianDigits(k.churned)} اشتراک در این بازه تمام شد`, good: k.churn_rate <= 10 },
+  ]
+  return <section className="analytics-overview">
+    <div className="analytics-head">
+      <div>
+        <p className="eyebrow">گزارش عملکرد</p>
+        <h3>{toPersianDigits(data.window_days)} روز گذشته</h3>
+      </div>
+      <div className="analytics-money">
+        <span><strong>{formatPrice(k.revenue)}</strong><small>درآمد این بازه</small></span>
+        <span><strong>{formatPrice(k.arpu)}</strong><small>درآمد به ازای هر عضو فعال</small></span>
+      </div>
+    </div>
+
+    <div className="rate-grid">
+      {rates.map((r) => (
+        <div className="rate-card" key={r.label}>
+          <div className="rate-top">
+            <span>{r.label}</span>
+            <strong className={r.good ? 'good' : 'bad'}>{toPersianDigits(r.value)}٪</strong>
+          </div>
+          <div className="rate-bar"><motion.div className={r.good ? 'good' : 'bad'} initial={{ width: 0 }} animate={{ width: `${Math.min(100, r.value)}%` }} transition={{ duration: .7, ease: 'easeOut' }} /></div>
+          <small>{r.hint}</small>
+        </div>
+      ))}
+      <div className="rate-card">
+        <div className="rate-top">
+          <span>اعضای فعال</span>
+          <strong>{toPersianDigits(k.active_members)}</strong>
+        </div>
+        <small>از {toPersianDigits(k.total_members)} عضو ثبت‌شده · {toPersianDigits(k.new_members)} عضو جدید</small>
+      </div>
+    </div>
+
+    <div className="content-grid">
+      <Card title={`در معرض ریزش (${toPersianDigits(k.at_risk_count)})`}>
+        <p className="reward-hint">اشتراک فعال دارند ولی در {toPersianDigits(data.window_days)} روز گذشته حتی یک بار نیامده‌اند. اینها را قبل از تمام شدن اشتراک بگیر.</p>
+        {data.at_risk_members.length ? data.at_risk_members.map((m) => (
+          <div className="list-row" key={m.member_id}>
+            <span className="icon-chip orange"><UserX size={16} /></span>
+            <div><strong>{m.full_name}</strong><small>{m.phone || 'بدون شماره'}</small></div>
+            <span className="capacity">{m.days_since != null ? `${toPersianDigits(m.days_since)} روز پیش` : 'هرگز نیامده'}</span>
+          </div>
+        )) : <Empty text="همه اعضای فعال اخیراً آمده‌اند 👏" />}
+      </Card>
+      <Card title={`اشتراک‌های رو به اتمام (${toPersianDigits(k.expiring_soon)})`}>
+        <p className="reward-hint">تا دو هفته آینده تمام می‌شوند — فرصت تمدید.</p>
+        {data.expiring_subscriptions.length ? data.expiring_subscriptions.map((s, i) => (
+          <div className="list-row" key={i}>
+            <span className="icon-chip blue"><CreditCard size={16} /></span>
+            <div><strong>{s.member_name}</strong><small>{s.plan_name}</small></div>
+            <span className="capacity">{toPersianDigits(s.days_left)} روز مانده</span>
+          </div>
+        )) : <Empty text="اشتراکی در آستانه اتمام نیست." />}
+      </Card>
+    </div>
+
+    <Card title="عملکرد کلاس‌ها">
+      <p className="reward-hint">نرخ حضور یعنی از رزروکننده‌ها چند نفر آمدند؛ نرخ پر شدن یعنی از ظرفیت چقدر استفاده شد. کلاس با ظرفیت خالی و حضور پایین، کلاسی است که باید حذف یا جابه‌جا شود.</p>
+      {data.class_performance.length ? <div className="class-perf">
+        {data.class_performance.map((c) => (
+          <div className="class-perf-row" key={c.name}>
+            <div className="class-perf-name"><strong>{c.name}</strong><small>{c.category}</small></div>
+            <div className="class-perf-bars">
+              <div className="class-perf-bar">
+                <span>حضور {toPersianDigits(c.attendance_rate)}٪</span>
+                <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.attendance_rate}%` }} transition={{ duration: .6 }} /></div>
+              </div>
+              <div className="class-perf-bar fill">
+                <span>ظرفیت {toPersianDigits(c.fill_rate)}٪</span>
+                <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.fill_rate}%` }} transition={{ duration: .6 }} /></div>
+              </div>
+            </div>
+            <span className="capacity">{toPersianDigits(c.attendance)} از {toPersianDigits(c.bookings)} رزرو</span>
+          </div>
+        ))}
+      </div> : <Empty text="جلسه‌ای در این بازه برگزار نشده." />}
+    </Card>
+  </section>
 }
 
 function AnalyticsCharts({ trends }) {
@@ -1953,7 +3460,7 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
             <option value="">انتخاب مربی</option>
             {trainers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
           </select></label>
-          <Field label="تاریخ" type="date" value={sessionForm.session_date} onChange={(session_date) => setSessionForm({ ...sessionForm, session_date })} required />
+          <JalaliDateField label="تاریخ" value={sessionForm.session_date} onChange={(session_date) => setSessionForm({ ...sessionForm, session_date })} required />
           <Field label="ساعت شروع" type="time" value={sessionForm.start_time} onChange={(start_time) => setSessionForm({ ...sessionForm, start_time })} required />
           <Field label="ساعت پایان" type="time" value={sessionForm.end_time} onChange={(end_time) => setSessionForm({ ...sessionForm, end_time })} required />
           <Field label="ظرفیت" type="number" value={sessionForm.capacity} onChange={(capacity) => setSessionForm({ ...sessionForm, capacity })} required />
@@ -1978,7 +3485,41 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
 function Profile({ user, setUser }) {
   const [form, setForm] = useState({ full_name: user.full_name || '', phone: user.phone || '', ...(user.member || user.trainer || {}) }); const [message, setMessage] = useState('')
   const submit = async (event) => { event.preventDefault(); try { const { data } = await api.patch('/auth/me/', form); setUser({ ...user, ...data }); setMessage('پروفایل با موفقیت به‌روزرسانی شد.') } catch (e) { setMessage(errorMessage(e)) } }
-  return <section className="page-stack"><PageTitle title="پروفایل من" text="اطلاعات حسابت را به‌روز نگه دار." /><Message text={message} /><Card title="اطلاعات شخصی"><form onSubmit={submit} className="form-grid two"><Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} /><Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />{user.role === 'MEMBER' ? <><Field label="تاریخ تولد" type="date" value={form.date_of_birth || ''} onChange={(date_of_birth) => setForm({ ...form, date_of_birth })} /><Field label="آدرس" value={form.address || ''} onChange={(address) => setForm({ ...form, address })} /></> : user.role === 'TRAINER' ? <><Field label="تخصص" value={form.specialization || ''} onChange={(specialization) => setForm({ ...form, specialization })} /><Field label="سال سابقه" type="number" value={form.experience_years || ''} onChange={(experience_years) => setForm({ ...form, experience_years })} /></> : null}<button className="button primary">ذخیره تغییرات <Check size={17} /></button></form></Card>{user.role === 'MEMBER' && <FaceEnrollCard user={user} setUser={setUser} />}</section>
+  return <section className="page-stack"><PageTitle title="پروفایل من" text="اطلاعات حسابت را به‌روز نگه دار." /><Message text={message} /><Card title="اطلاعات شخصی"><form onSubmit={submit} className="form-grid two"><Field label="نام و نام خانوادگی" value={form.full_name} onChange={(full_name) => setForm({ ...form, full_name })} /><Field label="شماره تماس" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} />{user.role === 'MEMBER' ? <><JalaliDateField label="تاریخ تولد" value={form.date_of_birth || ''} onChange={(date_of_birth) => setForm({ ...form, date_of_birth })} /><Field label="آدرس" value={form.address || ''} onChange={(address) => setForm({ ...form, address })} /></> : user.role === 'TRAINER' ? <><Field label="تخصص" value={form.specialization || ''} onChange={(specialization) => setForm({ ...form, specialization })} /><Field label="سال سابقه" type="number" value={form.experience_years || ''} onChange={(experience_years) => setForm({ ...form, experience_years })} /></> : null}<button className="button primary">ذخیره تغییرات <Check size={17} /></button></form></Card>
+    <PrivacyCard user={user} setUser={setUser} setMessage={setMessage} />
+    {user.role === 'MEMBER' && <FaceEnrollCard user={user} setUser={setUser} />}</section>
+}
+
+/** The two visibility switches, together in one place so it's obvious what
+ *  each one does and that they're independent. */
+function PrivacyCard({ user, setUser, setMessage }) {
+  const member = user.role === 'MEMBER'
+  const [profilePublic, setProfilePublic] = useState(user.is_profile_public !== false)
+  const [onLeaderboard, setOnLeaderboard] = useState(user.member?.show_on_leaderboard !== false)
+
+  const save = async (patch, apply) => {
+    try {
+      const { data } = await api.patch('/auth/me/', patch)
+      setUser({ ...user, ...data })
+      apply()
+      setMessage('تنظیمات حریم خصوصی ذخیره شد.')
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
+  return <Card title="حریم خصوصی">
+    <label className="privacy-row">
+      <input type="checkbox" checked={profilePublic}
+        onChange={(e) => { const v = e.target.checked; setProfilePublic(v); save({ is_profile_public: v }, () => {}) }} />
+      <span><strong>پروفایلم عمومی باشد</strong>
+        <small>اگر خاموش کنی، بقیه فقط نام و سطحت را می‌بینند — کلاس‌هایی که رفته‌ای، آمار و فعالیتت پنهان می‌شود. خودت و مدیر باشگاه همیشه کامل می‌بینید.</small></span>
+    </label>
+    {member && <label className="privacy-row">
+      <input type="checkbox" checked={onLeaderboard}
+        onChange={(e) => { const v = e.target.checked; setOnLeaderboard(v); save({ show_on_leaderboard: v }, () => {}) }} />
+      <span><strong>در جدول امتیازات نمایش داده شوم</strong>
+        <small>اگر خاموش کنی، اسمت از رتبه‌بندی و از آرشیو نفرات برتر حذف می‌شود. امتیاز خودت همچنان محاسبه و به خودت نشان داده می‌شود.</small></span>
+    </label>}
+  </Card>
 }
 
 function FaceEnrollCard({ user, setUser }) {
@@ -2006,24 +3547,107 @@ function FaceEnrollCard({ user, setUser }) {
   </Card>
 }
 
-function DietPlanQuickCreate({ assignments, onCreated, onError }) {
-  const [member, setMember] = useState(''); const [title, setTitle] = useState(''); const [busy, setBusy] = useState(false)
+const emptyMeal = () => ({ key: Math.random(), meal_name: '', calories: '', description: '' })
+
+/** Common Iranian meal slots, offered as one-tap starters so a trainer
+ *  isn't typing "صبحانه" for the hundredth time. Calories are a starting
+ *  point, always editable. */
+const MEAL_PRESETS = [
+  { meal_name: 'صبحانه', calories: 400 },
+  { meal_name: 'میان‌وعده صبح', calories: 150 },
+  { meal_name: 'ناهار', calories: 700 },
+  { meal_name: 'میان‌وعده عصر', calories: 200 },
+  { meal_name: 'شام', calories: 550 },
+  { meal_name: 'وعده بعد تمرین', calories: 300 },
+]
+
+/** Build or edit a diet plan with real meals.
+ *
+ *  Replaces the old "quick create", which took a title and then silently
+ *  invented a single 500-calorie meal called "وعده اصلی" — the trainer
+ *  could never actually say what the member should eat. */
+function DietPlanBuilder({ assignments, editingPlan, onSaved, onCancelEdit, onError }) {
+  const isEdit = !!editingPlan
+  const [member, setMember] = useState(editingPlan?.member || '')
+  const [title, setTitle] = useState(editingPlan?.title || '')
+  const [startDate, setStartDate] = useState(editingPlan?.start_date || todayIso())
+  const [endDate, setEndDate] = useState(editingPlan?.end_date || new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10))
+  const [meals, setMeals] = useState(
+    editingPlan?.items?.length
+      ? editingPlan.items.map((m) => ({ key: Math.random(), meal_name: m.meal_name, calories: m.calories, description: m.description || '' }))
+      : [emptyMeal()],
+  )
+  const [busy, setBusy] = useState(false)
+
+  const updateMeal = (i, patch) => setMeals((prev) => prev.map((m, j) => j === i ? { ...m, ...patch } : m))
+  const addMeal = (preset) => setMeals((prev) => [...prev, { ...emptyMeal(), ...(preset || {}) }])
+  const removeMeal = (i) => setMeals((prev) => prev.filter((_, j) => j !== i))
+
+  const totalCalories = meals.reduce((sum, m) => sum + (Number(m.calories) || 0), 0)
+
   const submit = async (event) => {
     event.preventDefault()
-    if (!member || !title) return
+    if (!member || !title) { onError('عضو و عنوان رژیم را مشخص کن.'); return }
+    const filled = meals.filter((m) => m.meal_name.trim())
+    if (!filled.length) { onError('حداقل یک وعده غذایی وارد کن.'); return }
+    if (endDate < startDate) { onError('تاریخ پایان نمی‌تواند قبل از شروع باشد.'); return }
     setBusy(true)
+    const payload = {
+      member, title, start_date: startDate, end_date: endDate,
+      items: filled.map((m) => ({ meal_name: m.meal_name.trim(), calories: Number(m.calories) || 0, description: m.description })),
+    }
     try {
-      const start_date = new Date().toISOString().slice(0, 10)
-      const end_date = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
-      await api.post('/diet-plans/', { member, title, start_date, end_date, items: [{ meal_name: 'وعده اصلی', calories: 500, description: '' }] })
-      setTitle(''); onCreated()
+      if (isEdit) await api.patch(`/diet-plans/${editingPlan.id}/`, payload)
+      else await api.post('/diet-plans/', payload)
+      if (!isEdit) { setTitle(''); setMeals([emptyMeal()]) }
+      onSaved(isEdit ? 'رژیم غذایی به‌روزرسانی شد.' : 'رژیم غذایی ساخته شد.')
     } catch (e) { onError(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <Card title="ساخت سریع رژیم غذایی"><form className="inline-form" onSubmit={submit}>
-    <select value={member} onChange={(e) => setMember(e.target.value)}><option value="">انتخاب عضو</option>{assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}</select>
-    <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان رژیم" />
-    <button className="button primary" disabled={busy}><Plus size={17} /> ساخت</button>
-  </form></Card>
+
+  return <Card title={isEdit ? `ویرایش رژیم: ${editingPlan.title}` : 'ساخت رژیم غذایی'}>
+    <form onSubmit={submit} className="workout-builder">
+      <div className="inline-form">
+        <select value={member} onChange={(e) => setMember(e.target.value)} disabled={isEdit}>
+          <option value="">انتخاب عضو</option>
+          {assignments.map((item) => <option key={item.id} value={item.member}>{item.member_name}</option>)}
+        </select>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="عنوان رژیم" />
+      </div>
+      <div className="inline-form">
+        <JalaliDateField label="از" value={startDate} onChange={setStartDate} />
+        <JalaliDateField label="تا" value={endDate} onChange={setEndDate} />
+      </div>
+
+      <div className="meal-presets">
+        <span>افزودن سریع:</span>
+        {MEAL_PRESETS.map((p) => (
+          <button type="button" className="chip" key={p.meal_name} onClick={() => addMeal(p)}>
+            <Plus size={12} /> {p.meal_name}
+          </button>
+        ))}
+      </div>
+
+      {meals.map((meal, i) => (
+        <div className="meal-row" key={meal.key}>
+          <input value={meal.meal_name} onChange={(e) => updateMeal(i, { meal_name: e.target.value })} placeholder="نام وعده (مثلاً صبحانه)" />
+          <input type="number" min="0" value={meal.calories} onChange={(e) => updateMeal(i, { calories: e.target.value })} placeholder="کالری" />
+          <input value={meal.description} onChange={(e) => updateMeal(i, { description: e.target.value })} placeholder="جزئیات: مثلاً ۲ عدد تخم‌مرغ + نان سنگک" />
+          {meals.length > 1 && <button type="button" className="icon-button" onClick={() => removeMeal(i)}><X size={14} /></button>}
+        </div>
+      ))}
+
+      <div className="meal-total">
+        <span>مجموع کالری روزانه</span>
+        <strong>{toPersianDigits(totalCalories)}</strong>
+      </div>
+
+      <div className="inline-form">
+        <button type="button" className="button muted" onClick={() => addMeal()}><Plus size={16} /> وعده خالی</button>
+        <button className="button primary" disabled={busy}><Check size={16} /> {isEdit ? 'ذخیره تغییرات' : 'ساخت رژیم'}</button>
+        {isEdit && <button type="button" className="button muted" onClick={onCancelEdit}>انصراف</button>}
+      </div>
+    </form>
+  </Card>
 }
 
 const emptyWorkoutItem = () => ({ key: Math.random(), exercise: '', sets: 3, reps: 12, notes: '' })
@@ -2077,7 +3701,7 @@ function WorkoutPlanBuilder({ assignments, onCreated, onError }) {
       {days.map((day, dayIndex) => (
         <div className="workout-builder-day" key={day.key}>
           <div className="workout-builder-day-head">
-            <input type="date" value={day.date} onChange={(e) => updateDay(dayIndex, { date: e.target.value })} required />
+            <JalaliDateField label="" value={day.date} onChange={(date) => updateDay(dayIndex, { date })} required />
             <input value={day.label} onChange={(e) => updateDay(dayIndex, { label: e.target.value })} placeholder="عنوان روز (مثلاً روز پا)" />
             {days.length > 1 && <button type="button" className="icon-button" onClick={() => removeDay(dayIndex)}><Trash2 size={15} /></button>}
           </div>
@@ -2101,8 +3725,24 @@ function WorkoutPlanBuilder({ assignments, onCreated, onError }) {
 }
 
 
+
+/** Native date input with a live Jalali readout.
+ *
+ *  `<input type="date">` renders its picker in the BROWSER's locale, which
+ *  is why these showed mm/dd/yyyy — that's not something CSS or a prop can
+ *  change. Rather than hand-roll a calendar widget (and inherit its
+ *  keyboard/mobile/validation bugs), the reliable native control stays and
+ *  the Persian date is echoed underneath, so what the user reads is always
+ *  Jalali even while the picker itself is the OS one. */
+function JalaliDateField({ label, value, onChange, required }) {
+  return <label className="jalali-date">{label}
+    <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} required={required} />
+    {value && <small className="jalali-date-echo">{formatDate(value)}</small>}
+  </label>
+}
+
 function PageTitle({ title, text }) { return <div className="page-title"><div><h2>{title}</h2><p>{text}</p></div></div> }
-function Card({ title, children, action, actionButton }) { const navigate = useNavigate(); return <section className="content-card "><header><h3>{title}</h3>{actionButton || (action && <button className="text-button" onClick={() => navigate(action)}>مشاهده همه</button>)}</header>{children}</section> }
+function Card({ title, children, action, actionButton }) { const navigate = useNavigate(); const { t } = useLang(); return <section className="content-card "><header><h3>{title}</h3>{actionButton || (action && <button className="text-button" onClick={() => navigate(action)}>{t('مشاهده همه')}</button>)}</header>{children}</section> }
 function Metric({ label, value, icon: Icon, color = 'blue' }) { return <article className={`metric-card metric-card--${color}`}><span className="icon-chip on-tile"><Icon size={20} /></span><p>{label}</p><strong>{value}</strong></article> }
 function Field({ label, type = 'text', value, onChange, required }) { return <label>{label}<input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} /></label> }
 function Status({ value }) { return <span className={`status ${value?.toLowerCase()}`}>{value === 'ACTIVE' ? 'فعال' : value === 'EXPIRED' ? 'منقضی' : value === 'CANCELLED' ? 'لغو شده' : value}</span> }

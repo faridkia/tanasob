@@ -1,3 +1,4 @@
+
 from django.conf import settings
 from django.utils import timezone
 
@@ -104,7 +105,7 @@ def _build_system_prompt(user):
     return base + context
 
 
-def _call_gateway(messages):
+def _call_gateway(messages, model=None):
     api_base = settings.AI_LLM_API_BASE
     api_key = settings.AI_LLM_API_KEY
     if not api_base or not api_key:
@@ -122,7 +123,7 @@ def _call_gateway(messages):
                     'Authorization': f'{settings.AI_LLM_AUTH_SCHEME} {api_key}',
                     'Content-Type': 'application/json',
                 },
-                json={'model': settings.AI_LLM_MODEL, 'messages': messages},
+                json={'model': model or settings.AI_LLM_MODEL, 'messages': messages},
                 timeout=settings.AI_LLM_TIMEOUT,
             )
             break
@@ -139,6 +140,7 @@ def _call_gateway(messages):
         return data['choices'][0]['message']['content'] or ''
     except (KeyError, IndexError):
         raise AssistantError('پاسخ نامعتبر از سرویس هوش مصنوعی دریافت شد.')
+
 
 
 def ask_assistant(user, user_text):

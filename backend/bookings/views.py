@@ -19,6 +19,7 @@ from classes.models import ClassSession
 from .models import Attendance, Booking
 from .serializers import AttendanceSerializer, BookingSerializer
 from .services import cancel_booking, create_booking, match_face
+from .services_reminders import send_tomorrows_session_reminders
 
 
 class BookingListCreateView(generics.ListCreateAPIView):
@@ -30,6 +31,7 @@ class BookingListCreateView(generics.ListCreateAPIView):
     """
 
     serializer_class = BookingSerializer
+    filterset_fields = ['session', 'status']
 
     def get_queryset(self):
         user = self.request.user
@@ -175,6 +177,21 @@ class CheckInView(APIView):
             AttendanceSerializer(attendance).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class SendSessionRemindersView(APIView):
+    """Admin's manual "send now" button — same reminder logic the daily
+    cron job runs, scoped to the admin's own gym only."""
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        result = send_tomorrows_session_reminders(organization=request.user.organization)
+        return Response({
+            'date': result['date'],
+            'notified': result['notified'],
+            'sms_sent': result['sms_sent'],
+        })
 
 
 def _to_drf_error(exc):

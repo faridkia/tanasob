@@ -31,6 +31,7 @@ urlpatterns = [
 
     # Business apps
     path('api/auth/', include('accounts.urls')),
+    path('api/', include('common.urls')),
     path('api/', include('organizations.urls')),
     path('api/', include('memberships.urls')),
     path('api/', include('classes.urls')),
@@ -40,6 +41,7 @@ urlpatterns = [
     path('api/', include('competitions.urls')),
     path('api/', include('events.urls')),
     path('api/', include('activities.urls')),
+    path('api/', include('blog.urls')),
     path('api/', include('messaging.urls')),
     path('api/', include('notifications.urls')),
     path('api/', include('reports.urls')),

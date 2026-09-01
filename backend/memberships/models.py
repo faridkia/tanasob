@@ -95,3 +95,34 @@ class Payment(models.Model):
 
     def __str__(self):
         return f'Payment {self.transaction_ref} - {self.amount} ({self.status})'
+
+
+class LeaderboardReward(models.Model):
+    """A membership-plan discount earned by finishing top-3 for a period.
+
+    Two numbers, on purpose:
+
+    * ``percent`` — the headline prize, applied ONCE to the next purchase.
+    * ``residual_percent`` — a small standing discount the member keeps
+      afterwards.
+
+    Winning one month shouldn't discount every annual renewal forever, but
+    it also shouldn't evaporate the moment it's spent. So first place is
+    15% once and 3% thereafter, second 10%/2%, third 5%/1%.
+    """
+
+    member = models.ForeignKey(
+        'accounts.Member', on_delete=models.CASCADE, related_name='leaderboard_rewards'
+    )
+    rank = models.PositiveIntegerField(help_text='1, 2 or 3 — leaderboard position at grant time.')
+    percent = models.PositiveIntegerField(help_text='One-time discount on the next plan purchase.')
+    residual_percent = models.PositiveIntegerField(default=0, help_text='Standing discount kept after the one-time prize is spent.')
+    is_redeemed = models.BooleanField(default=False)
+    granted_at = models.DateTimeField(auto_now_add=True)
+    redeemed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-granted_at']
+
+    def __str__(self):
+        return f'{self.member.user.full_name} - #{self.rank} ({self.percent}%)'

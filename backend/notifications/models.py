@@ -15,6 +15,7 @@ class Notification(models.Model):
         BOOKING = 'BOOKING', 'Booking'
         MESSAGE = 'MESSAGE', 'Message'
         SESSION_REMINDER = 'SESSION_REMINDER', 'Session reminder'
+        ANNOUNCEMENT = 'ANNOUNCEMENT', 'Announcement'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

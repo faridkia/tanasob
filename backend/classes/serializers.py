@@ -2,14 +2,19 @@
 
 from rest_framework import serializers
 
+from common.richtext import sanitize_html
+
 from .models import ClassSession, GymClass
 
 
 class GymClassSerializer(serializers.ModelSerializer):
     class Meta:
         model = GymClass
-        fields = ('id', 'name', 'category', 'description', 'created_at')
+        fields = ('id', 'name', 'category', 'description', 'description_html', 'cover_image', 'created_at')
         read_only_fields = ('id', 'created_at')
+
+    def validate_description_html(self, value):
+        return sanitize_html(value)
 
 
 class ClassSessionSerializer(serializers.ModelSerializer):

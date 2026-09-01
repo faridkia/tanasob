@@ -30,6 +30,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)  # Django admin access
 
+    # Public by default, with an opt-out — matches how members expect a gym
+    # community to work. When off, other members see only the name and
+    # avatar; the activity detail (classes attended, streaks, stats) is
+    # hidden. Admins and the user themselves always see the full profile.
+    is_profile_public = models.BooleanField(default=True)
+
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
@@ -61,6 +67,12 @@ class Member(models.Model):
     address = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Separate from is_profile_public on purpose: plenty of people are happy
+    # to have a profile but don't want their name ranked against everyone
+    # else's. Opting out hides them from the leaderboard entirely; their
+    # own points page still works.
+    show_on_leaderboard = models.BooleanField(default=True)
+
     qr_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     # 128-length face-api.js descriptor captured client-side at enrollment,
     # used for face-recognition check-in (see bookings.services.match_face).
@@ -78,6 +90,12 @@ class Trainer(models.Model):
     )
     specialization = models.CharField(max_length=100, blank=True)
     bio = models.TextField(blank=True)
+    # Rich version of `bio`, written in the WYSIWYG editor and allowed to
+    # contain images. `bio` is kept as the plain-text short line used in
+    # lists and cards; this one is only rendered on the trainer's own page.
+    # Always sanitised via common.richtext before it is stored.
+    bio_html = models.TextField(blank=True)
+    photo = models.ImageField(upload_to='trainers/', null=True, blank=True)
     experience_years = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 

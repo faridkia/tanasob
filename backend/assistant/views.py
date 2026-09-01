@@ -10,6 +10,7 @@ from .serializers import ChatMessageSerializer, SendMessageSerializer
 from .services import AssistantError, ask_assistant
 
 
+
 class ChatHistoryView(generics.ListAPIView):
 
     serializer_class = ChatMessageSerializer
@@ -32,3 +33,5 @@ class SendMessageView(APIView):
         except AssistantError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(ChatMessageSerializer(reply).data, status=status.HTTP_201_CREATED)
+
+

@@ -41,6 +41,12 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:8000',
+      // User-uploaded files (editor images, class covers, blog art) live on
+      // Django. Without this, Vite's SPA fallback answers /media/* with
+      // index.html and every uploaded image renders broken in dev — in
+      // production nginx proxies /media/ and it works, so the bug only ever
+      // shows up locally.
+      '/media': 'http://127.0.0.1:8000',
     },
   },
 })

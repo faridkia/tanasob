@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import BodyProgress
+from .models import BodyProgress, MemberGoal
 
 
 class BodyProgressSerializer(serializers.ModelSerializer):
@@ -15,3 +15,10 @@ class BodyProgressSerializer(serializers.ModelSerializer):
             'weight_kg', 'body_fat_percent', 'waist_cm', 'notes',
         )
         read_only_fields = ('id', 'member', 'member_name')
+
+
+class MemberGoalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MemberGoal
+        fields = ('weekly_sessions', 'monthly_sessions', 'daily_calories', 'target_weight_kg', 'note', 'updated_at')
+        read_only_fields = ('updated_at',)

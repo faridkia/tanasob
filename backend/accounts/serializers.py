@@ -12,6 +12,8 @@ from rest_framework import serializers
 
 from organizations.models import Organization
 
+from common.richtext import sanitize_html
+
 from .models import Member, Trainer, TrainerMemberAssignment, User
 
 
@@ -28,7 +30,7 @@ class MemberProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Member
-        fields = ('date_of_birth', 'gender', 'address', 'has_face')
+        fields = ('date_of_birth', 'gender', 'address', 'has_face', 'show_on_leaderboard')
 
     def get_has_face(self, obj):
         return bool(obj.face_descriptor)
@@ -37,7 +39,7 @@ class MemberProfileSerializer(serializers.ModelSerializer):
 class TrainerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trainer
-        fields = ('specialization', 'bio', 'experience_years')
+        fields = ('specialization', 'bio', 'bio_html', 'photo', 'experience_years')
 
 
 class TrainerListSerializer(serializers.ModelSerializer):
@@ -47,7 +49,7 @@ class TrainerListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Trainer
-        fields = ('id', 'full_name', 'specialization')
+        fields = ('id', 'full_name', 'specialization', 'photo')
 
 
 class MemberListSerializer(serializers.ModelSerializer):
@@ -80,6 +82,7 @@ class UserSerializer(serializers.ModelSerializer):
             'member',
             'trainer',
             'organization',
+            'is_profile_public',
         )
         read_only_fields = ('id', 'role', 'is_active', 'created_at')
 
@@ -246,28 +249,40 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
     address = serializers.CharField(required=False, allow_blank=True)
     specialization = serializers.CharField(required=False, allow_blank=True)
     bio = serializers.CharField(required=False, allow_blank=True)
+    bio_html = serializers.CharField(required=False, allow_blank=True)
     experience_years = serializers.IntegerField(required=False)
+    show_on_leaderboard = serializers.BooleanField(required=False)
 
     class Meta:
         model = User
         fields = (
             'full_name',
             'phone',
+            'is_profile_public',
             'date_of_birth',
             'gender',
             'address',
+            'show_on_leaderboard',
             'specialization',
             'bio',
+            'bio_html',
             'experience_years',
         )
+
+    def validate_bio_html(self, value):
+        # Runs on every write path, so HTML posted straight at the API is
+        # cleaned exactly like HTML that came from the editor.
+        return sanitize_html(value)
 
     def update(self, instance, validated_data):
         profile_keys = (
             'date_of_birth',
             'gender',
             'address',
+            'show_on_leaderboard',
             'specialization',
             'bio',
+            'bio_html',
             'experience_years',
         )
         profile_data = {k: validated_data.pop(k) for k in profile_keys if k in validated_data}
@@ -278,13 +293,13 @@ class UpdateProfileSerializer(serializers.ModelSerializer):
         if instance.role == User.Role.MEMBER and hasattr(instance, 'member_profile'):
             profile = instance.member_profile
             for key, value in profile_data.items():
-                if key in ('date_of_birth', 'gender', 'address'):
+                if key in ('date_of_birth', 'gender', 'address', 'show_on_leaderboard'):
                     setattr(profile, key, value)
             profile.save()
         elif instance.role == User.Role.TRAINER and hasattr(instance, 'trainer_profile'):
             profile = instance.trainer_profile
             for key, value in profile_data.items():
-                if key in ('specialization', 'bio', 'experience_years'):
+                if key in ('specialization', 'bio', 'bio_html', 'experience_years'):
                     setattr(profile, key, value)
             profile.save()
         return instance

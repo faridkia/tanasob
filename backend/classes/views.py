@@ -5,9 +5,12 @@ Admins manage gym classes and sessions; members browse upcoming sessions with
 filters (FR-CLS-3). Trainers can list their own sessions.
 """
 
+from django.db.models import Count, Q
 from django.utils import timezone
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from common.permissions import IsAdmin
 
@@ -33,11 +36,73 @@ class GymClassListCreateView(generics.ListCreateAPIView):
 
 
 class GymClassDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Read is open to everyone in the gym (this backs the class's own
+    page); writing stays admin-only."""
+
     serializer_class = GymClassSerializer
-    permission_classes = [IsAdmin]
+
+    def get_permissions(self):
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return [IsAdmin()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return GymClass.objects.filter(organization=self.request.user.organization)
+
+
+class GymClassHistoryView(APIView):
+    """Sessions of this class that have already happened, newest first, with
+    what actually came of them — how many booked, how many turned up.
+
+    This is the "تجربه کلاس‌های قبلی" panel: a member deciding whether to
+    book can see whether the class actually runs and fills up.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        org = request.user.organization
+        try:
+            gym_class = GymClass.objects.get(pk=pk, organization=org)
+        except GymClass.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        today = timezone.localdate()
+        sessions = (
+            ClassSession.objects.filter(gym_class=gym_class, session_date__lt=today)
+            .select_related('trainer__user')
+            .annotate(
+                booked=Count('bookings', filter=Q(bookings__status='CONFIRMED'), distinct=True),
+                attended=Count('attendances', distinct=True),
+            )
+            .order_by('-session_date', '-start_time')[:20]
+        )
+        rows = [
+            {
+                'id': s.id,
+                'session_date': s.session_date,
+                'start_time': s.start_time,
+                'end_time': s.end_time,
+                'trainer_name': s.trainer.user.full_name,
+                'trainer_id': s.trainer_id,
+                'capacity': s.capacity,
+                'booked': s.booked,
+                'attended': s.attended,
+            }
+            for s in sessions
+        ]
+        held = len(rows)
+        total_attended = sum(r['attended'] for r in rows)
+        total_booked = sum(r['booked'] for r in rows)
+        return Response({
+            'sessions': rows,
+            'summary': {
+                'sessions_held': held,
+                'total_attended': total_attended,
+                'avg_attendance': round(total_attended / held, 1) if held else 0,
+                'show_up_rate': round(total_attended / total_booked * 100) if total_booked else 0,
+            },
+        })
 
 
 class ClassSessionListCreateView(generics.ListCreateAPIView):

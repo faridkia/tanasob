@@ -13,7 +13,8 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = (
             'id', 'sender', 'sender_name', 'sender_role',
-            'receiver', 'content', 'sent_at', 'is_read',
+            'receiver', 'content', 'sent_at',
+            'edited_at', 'is_read',
         )
         read_only_fields = ('id', 'sender', 'sender_name', 'sender_role', 'sent_at', 'is_read')
 

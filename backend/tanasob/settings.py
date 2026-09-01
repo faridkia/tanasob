@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     'competitions',
     'events',
     'activities',
+    'blog',
     'messaging',
     'notifications',
     'reports',
@@ -296,3 +297,12 @@ AI_LLM_API_KEY = os.environ.get('AI_LLM_API_KEY', '')
 AI_LLM_MODEL = os.environ.get('AI_LLM_MODEL', '')
 AI_LLM_AUTH_SCHEME = os.environ.get('AI_LLM_AUTH_SCHEME', 'Bearer')
 AI_LLM_TIMEOUT = int(os.environ.get('AI_LLM_TIMEOUT', '60'))
+
+
+# -------------------------------------------------------------------
+# SMS (sms.ir) — session reminders + admin broadcast. Left unconfigured,
+# every send is a silent no-op (logged) rather than an error, so the app
+# works fine without an SMS account.
+# -------------------------------------------------------------------
+SMS_IR_API_KEY = os.environ.get('SMS_IR_API_KEY', '')
+SMS_IR_LINE_NUMBER = os.environ.get('SMS_IR_LINE_NUMBER', '')

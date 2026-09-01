@@ -47,6 +47,26 @@ def _are_connected(user_a, user_b):
     return False
 
 
+class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Edit or delete one of your OWN messages.
+
+    Sender-only, deliberately: letting a receiver edit what someone else
+    said would rewrite the other person's words. Editing stamps `edited_at`
+    so the change is visible rather than silent.
+    """
+
+    serializer_class = MessageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Message.objects.filter(sender=self.request.user)
+
+    def perform_update(self, serializer):
+        from django.utils import timezone
+
+        serializer.save(edited_at=timezone.now())
+
+
 class ConversationView(generics.ListAPIView):
     """GET messages between the current user and another user (FR-MSG-2).
 

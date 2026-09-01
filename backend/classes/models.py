@@ -18,6 +18,11 @@ class GymClass(models.Model):
     name = models.CharField(max_length=100)
     category = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
+    # Rich description shown on the class's own page — may contain images
+    # the admin dropped into the editor. `description` stays as the short
+    # plain-text line used in cards and lists. Sanitised on write.
+    description_html = models.TextField(blank=True)
+    cover_image = models.ImageField(upload_to='classes/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
