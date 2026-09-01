@@ -404,61 +404,108 @@ function RegisterGymPage({ onLogin }) {
   )
 }
 
-/** Switches the theme as a circular wipe that grows out of the button you
- *  actually pressed, using the View Transitions API.
+/** Switches the theme as a circular wipe growing out of the button that was
+ *  pressed.
  *
- *  The whole thing degrades to a plain instant switch when the browser has
- *  no startViewTransition (Firefox, older Safari) or when the user asked
- *  for reduced motion — a full-screen wipe is exactly the kind of movement
- *  that setting exists to suppress. */
+ *  Deliberately NOT the View Transitions API. That snapshots the whole
+ *  scrollable page — the dashboard is ~2800px tall, so Chrome rasterises two
+ *  full-page textures (millions of pixels each, doubled again on a retina
+ *  display) before a single frame moves, and the sweep stutters. Safari does
+ *  the same work more cheaply, which is why it only ever looked bad on
+ *  Chrome.
+ *
+ *  Instead: one viewport-sized solid circle, animated with nothing but
+ *  transform and opacity. Those two are the only properties Chrome can run
+ *  entirely on the compositor, so no layout, no paint, no re-raster of the
+ *  backdrop-filter surfaces the glass design is full of. It also means every
+ *  browser gets the same animation instead of Firefox falling back to an
+ *  instant flip.
+ *
+ *  Sequence: a disc in the DESTINATION background colour grows from the
+ *  button until it covers the viewport, the theme is swapped underneath it
+ *  while nothing is visible, then the disc fades off to reveal the new page.
+ */
+const THEME_BG = {}
+
+/** The page background a theme resolves to, measured once per theme by
+ *  flipping the attribute and reading it back. Cached, because doing this on
+ *  every toggle forces a synchronous style recalc. */
+function themeBackground(name) {
+  if (THEME_BG[name]) return THEME_BG[name]
+  const root = document.documentElement
+  const previous = root.dataset.theme
+  root.dataset.theme = name
+  THEME_BG[name] = getComputedStyle(document.body).backgroundColor
+  if (previous === undefined) delete root.dataset.theme
+  else root.dataset.theme = previous
+  return THEME_BG[name]
+}
+
 function useThemeTransition(theme, setTheme) {
   const busy = useRef(false)
   return (event) => {
     const next = theme === 'dark' ? 'light' : 'dark'
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (!document.startViewTransition || reduced) return setTheme(next)
-    // A second click mid-sweep makes the browser abandon the first
-    // transition, which leaves the wipe half-drawn over the new palette.
+    // A full-screen wipe is exactly the kind of movement reduced-motion
+    // exists to suppress. A hidden tab gets the same treatment for a
+    // different reason: browsers throttle animations there to a standstill,
+    // so the sweep would never progress and there is nobody watching it.
+    if (reduced || document.visibilityState !== 'visible' || !event?.currentTarget) {
+      document.documentElement.dataset.theme = next
+      return setTheme(next)
+    }
     if (busy.current) return
     busy.current = true
 
-    // Origin = the button's centre, so the new theme appears to pour out of
-    // the thing the user touched.
+    // Origin = the button's centre, so the new theme pours out of the thing
+    // the user actually touched. Radius reaches the farthest corner of the
+    // VIEWPORT — not the document — which is the whole point.
     const rect = event.currentTarget.getBoundingClientRect()
     const x = rect.left + rect.width / 2
     const y = rect.top + rect.height / 2
     const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
 
-    document.documentElement.style.setProperty('--theme-x', `${x}px`)
-    document.documentElement.style.setProperty('--theme-y', `${y}px`)
-    document.documentElement.style.setProperty('--theme-r', `${radius}px`)
+    const layer = document.createElement('div')
+    layer.className = 'theme-wipe'
+    const disc = document.createElement('div')
+    disc.className = 'theme-wipe-disc'
+    disc.style.cssText = `left:${x - radius}px;top:${y - radius}px;width:${radius * 2}px;height:${radius * 2}px;background:${themeBackground(next)}`
+    layer.appendChild(disc)
+    document.body.appendChild(layer)
 
-    const transition = document.startViewTransition(() => {
-      // The attribute is written here, by hand, rather than left to the
-      // useEffect that normally owns it. useEffect is a passive effect, so
-      // React is free to run it after this callback returns — and by then
-      // the browser has already snapshotted the "new" state, capturing the
-      // OLD palette. The wipe would reveal the colours it started with and
-      // the real theme would land a frame later as a jump.
+    // Whatever happens next, land on the requested theme and take the
+    // overlay back down — exactly once.
+    //
+    // This is a hard guarantee, not a tidy-up: the overlay covers the whole
+    // viewport, so if the finishing path is ever missed the page is left
+    // under an opaque sheet with the toggle stuck. An animation's `finished`
+    // promise is not enough on its own — if the tab is hidden mid-sweep the
+    // animation simply stops progressing and that promise never settles, so
+    // a timer has to be able to finish the job too.
+    let settled = false
+    const settle = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(failsafe)
       document.documentElement.dataset.theme = next
-      flushSync(() => setTheme(next))
-    })
-    // ready/finished REJECT when the browser skips the transition — a
-    // background tab, or a second toggle aborting this one. Both need a
-    // catch or every skipped switch logs an unhandled rejection; .finally()
-    // is not enough on its own, it re-throws what it was handed.
-    transition.ready.catch(() => null).then((skipped) => {
-      if (skipped === null) return
-      // Only the new layer moves. The old one is held still underneath by
-      // CSS (animation: none) and is fully covered by the time the circle
-      // reaches the far corner, so there is nothing to fade — fading it
-      // just opens a gap that shows the page background through both.
-      document.documentElement.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-        { duration: 620, easing: 'cubic-bezier(.32,.72,.34,1)', pseudoElement: '::view-transition-new(root)' },
-      )
-    })
-    transition.finished.catch(() => {}).then(() => { busy.current = false })
+      setTheme(next)
+      layer.remove()
+      busy.current = false
+    }
+    const failsafe = setTimeout(settle, 1600)
+
+    const grow = disc.animate(
+      { transform: ['scale(0)', 'scale(1)'] },
+      { duration: 520, easing: 'cubic-bezier(.32,.72,.34,1)', fill: 'forwards' },
+    )
+    grow.finished.then(() => {
+      if (settled) return
+      // Swapped while the disc covers everything, so the switch itself is
+      // never seen — only its result, as the disc fades off.
+      document.documentElement.dataset.theme = next
+      setTheme(next)
+      return layer.animate({ opacity: [1, 0] }, { duration: 260, easing: 'ease-out', fill: 'forwards' }).finished
+    }).then(settle, settle)
   }
 }
 
@@ -1216,7 +1263,10 @@ function Classes({ user }) {
   const [sessions, setSessions] = useState([]); const [bookings, setBookings] = useState([]); const [attendance, setAttendance] = useState([]); const [classes, setClasses] = useState([]); const [trainers, setTrainers] = useState([]); const [message, setMessage] = useState('')
   const [openId, setOpenId] = useState(null)
   const load = () => {
-    const calls = [api.get('/sessions/'), api.get('/classes/')]
+    // The API only narrows /sessions/ to future dates for members, so an
+    // admin's first page is the OLDEST sessions — 20 rows from last month,
+    // with everything upcoming past the page boundary. Ask explicitly.
+    const calls = [api.get(`/sessions/?from=${todayIso()}&page_size=200`), api.get('/classes/')]
     if (user.role === 'MEMBER') calls.push(api.get('/bookings/'), api.get('/attendance/'))
     if (admin) calls.push(api.get('/auth/trainers/'))
     return Promise.all(calls).then((results) => {
@@ -1260,7 +1310,7 @@ function Classes({ user }) {
   return <section className="page-stack">
     <PageTitle title="کلاس‌ها و جلسات" text={user.role === 'MEMBER' ? 'کلاس مناسب امروزت را انتخاب و رزرو کن.' : admin ? 'کلاس و جلسه جدید بساز و به مربی اختصاص بده.' : 'نمایی از برنامه‌ی کلاس‌های باشگاه.'} />
     <Message text={message} />
-    {admin && <ClassSessionManager classes={classes} trainers={trainers} onChanged={load} setMessage={setMessage} />}
+    {admin && <ClassSessionManager classes={classes} trainers={trainers} sessions={sessions} onChanged={load} setMessage={setMessage} />}
     <div className="session-grid">
       {byClass.map(({ gymClass, next, upcoming }) => {
         const booking = bookings.find((item) => item.session === next.id && item.status === 'CONFIRMED')
@@ -1888,8 +1938,10 @@ function ExerciseLibrary() {
                 their gym owns, a trainer only what they added. The shared
                 library is read-only for everyone. */}
             {ex.can_edit && <>
-              <button className="icon-button" onClick={() => startEdit(ex)}><Edit2 size={15} /></button>
-              <button className="icon-button" onClick={() => remove(ex.id)}><Trash2 size={15} /></button>
+              {/* Icon-only, so they need a name of their own — otherwise a
+                  screen reader announces two unlabelled buttons per row. */}
+              <button className="icon-button" title="ویرایش حرکت" aria-label={`ویرایش ${ex.name}`} onClick={() => startEdit(ex)}><Edit2 size={15} /></button>
+              <button className="icon-button" title="حذف حرکت" aria-label={`حذف ${ex.name}`} onClick={() => remove(ex.id)}><Trash2 size={15} /></button>
             </>}
           </div>
         )) : <Empty text="حرکتی پیدا نشد." />}
@@ -1919,7 +1971,7 @@ function Competitions({ user }) {
         <button className="button primary" style={{ alignSelf: 'flex-start', background: '#fff', color: 'var(--accent-ink)', boxShadow: 'none' }} onClick={() => setOpenId(featured.id)}>مشاهده مسابقه <ChevronLeft size={16} /></button>
       </motion.div>
     )}
-    {admin && <CompetitionManager onCreated={load} setMessage={setMessage} />}
+    {admin && <CompetitionManager competitions={competitions} onCreated={load} setMessage={setMessage} />}
     <Card title="مسابقات فعال">
       {competitions.length ? (
         <div className="competition-grid">
@@ -1998,7 +2050,7 @@ function CompetitionDetailModal({ competition, onClose, onChanged, setMessage, c
   </motion.div>
 }
 
-function CompetitionManager({ onCreated, setMessage }) {
+function CompetitionManager({ competitions = [], onCreated, setMessage }) {
   const blank = () => ({
     title: '', description: '', kind: 'INDIVIDUAL', level: 'ALL',
     start_date: todayIso(), end_date: todayIso(), prizes: [{ rank: 1, title: '' }],
@@ -2042,6 +2094,36 @@ function CompetitionManager({ onCreated, setMessage }) {
       </div>
       <button className="button primary" disabled={busy}><Plus size={16} /> ساخت مسابقه</button>
     </form>
+    {competitions.length > 0 && <div className="managed-list">
+      <h4 className="managed-list-title">مسابقه‌های ثبت‌شده</h4>
+      {competitions.map((c) => (
+        <ManagedRow
+          key={c.id}
+          item={c}
+          endpoint="/competitions/"
+          onChanged={onCreated}
+          setMessage={setMessage}
+          savedText="مسابقه به‌روزرسانی شد."
+          deletedText="مسابقه حذف شد."
+          confirmText="این مسابقه حذف شود؟ شرکت‌کننده‌های ثبت‌شده هم حذف می‌شوند."
+          fields={[
+            { key: 'title', label: 'عنوان مسابقه', required: true },
+            { key: 'description', label: 'توضیحات', type: 'textarea' },
+            { key: 'kind', label: 'نوع', type: 'select', options: [{ value: 'INDIVIDUAL', label: 'فردی' }, { value: 'TEAM', label: 'تیمی' }] },
+            { key: 'level', label: 'سطح', type: 'select', options: COMPETITION_LEVELS },
+            { key: 'start_date', label: 'تاریخ شروع', type: 'date', required: true },
+            { key: 'end_date', label: 'تاریخ پایان', type: 'date', required: true },
+          ]}
+        >
+          <span className="session-icon"><Trophy size={17} /></span>
+          <div><strong>{c.title}</strong><small>{formatDate(c.start_date)} تا {formatDate(c.end_date)}</small></div>
+        </ManagedRow>
+      ))}
+      {/* Prizes stay on the create form only: they are a nested list, and
+          editing them inline next to six flat fields reads as a different
+          kind of control than everything around it. */}
+      <p className="managed-note">برای تغییر جوایز، مسابقه را حذف و دوباره بساز.</p>
+    </div>}
   </Card>
 }
 
@@ -2109,7 +2191,7 @@ function EventDetailModal({ event, onClose, canManage, onChanged, setMessage }) 
   </motion.div>
 }
 
-function EventManager({ onCreated, setMessage }) {
+function EventManager({ events = [], onCreated, setMessage }) {
   const blank = () => ({ title: '', description: '', location: '', event_date: todayIso() })
   const [form, setForm] = useState(blank())
   const [imageFile, setImageFile] = useState(null)
@@ -2143,6 +2225,30 @@ function EventManager({ onCreated, setMessage }) {
       </label>
       <button className="button primary" disabled={busy}><Plus size={16} /> ساخت رویداد</button>
     </form>
+    {events.length > 0 && <div className="managed-list">
+      <h4 className="managed-list-title">رویدادهای ثبت‌شده</h4>
+      {events.map((e) => (
+        <ManagedRow
+          key={e.id}
+          item={e}
+          endpoint="/events/"
+          onChanged={onCreated}
+          setMessage={setMessage}
+          savedText="رویداد به‌روزرسانی شد."
+          deletedText="رویداد حذف شد."
+          confirmText="این رویداد حذف شود؟"
+          fields={[
+            { key: 'title', label: 'عنوان رویداد', required: true },
+            { key: 'description', label: 'توضیحات', type: 'textarea' },
+            { key: 'location', label: 'مکان', },
+            { key: 'event_date', label: 'تاریخ رویداد', type: 'date', required: true },
+          ]}
+        >
+          <span className="session-icon"><CalendarRange size={17} /></span>
+          <div><strong>{e.title}</strong><small>{formatDate(e.event_date)}{e.location ? ` · ${e.location}` : ''}</small></div>
+        </ManagedRow>
+      ))}
+    </div>}
   </Card>
 }
 
@@ -2158,7 +2264,7 @@ function EventsPage({ user }) {
   return <section className="page-stack">
     <PageTitle title="رویدادهای باشگاه" text="از اتفاقات پیش روی باشگاه باخبر شو." />
     <Message text={message} />
-    {admin && <EventManager onCreated={load} setMessage={setMessage} />}
+    {admin && <EventManager events={events} onCreated={load} setMessage={setMessage} />}
     <Card title="رویدادهای پیش رو">
       {events.length ? (
         <div className="competition-grid">
@@ -2658,7 +2764,7 @@ function DayAgenda({ date, data, meals, onStartWorkout, canStart = true }) {
             <small>{b.session_detail.trainer} · {toPersianDigits(b.session_detail.start_time?.slice(0, 5))} تا {toPersianDigits(b.session_detail.end_time?.slice(0, 5))}
               {b.capacity != null && ` · ${toPersianDigits(b.booked)} از ${toPersianDigits(b.capacity)} نفر`}</small>
           </div>
-          <Link className="button muted" to="/classes">جزئیات کلاس</Link>
+          <Link className="button muted" to={`/classes/${b.session_detail.gym_class_id}`}>جزئیات کلاس</Link>
         </div>
       </article>
     ))}
@@ -3369,7 +3475,24 @@ function TrainerPanel() {
     <div className="content-grid"><Card title="اعضای من">{assignments.map((item) => { const attendedIds = new Set(attendance.filter((a) => a.member === item.member).map((a) => a.session)); const available = sessions.filter((session) => !attendedIds.has(session.id)); return <div className="member-checkin-row" key={item.id}><div className="member-checkin-top"><span className="avatar">{item.member_name?.[0]}</span><div><strong>{item.member_name}</strong><small>عضو فعال</small></div></div>{available.length ? <select onChange={(e) => e.target.value && checkIn(item.member, e.target.value)} defaultValue=""><option value="">ثبت حضور در...</option>{available.map((session) => <option value={session.id} key={session.id}>{session.gym_class_name} · {formatDate(session.session_date)}</option>)}</select> : <p className="member-checkin-done"><Check size={15} /> در همه جلسات حضور ثبت شده</p>}</div> }) || <Empty text="عضوی به شما اختصاص داده نشده است." />}</Card><Card title="جلسات من">{sessions.map((session) => <div className="list-row" key={session.id}><span className="session-icon"><CalendarDays size={17} /></span><div><strong>{session.gym_class_name}</strong><small>{formatDate(session.session_date)} · {session.start_time?.slice(0, 5)}</small></div><span className="capacity">{session.booked_count} رزرو</span></div>)}</Card></div></section>
 }
 
+const ADMIN_TABS = [
+  { key: 'overview', label: 'نمای کلی', icon: Activity },
+  { key: 'classes', label: 'عملکرد کلاس‌ها', icon: Dumbbell },
+  { key: 'trends', label: 'روندها', icon: Award },
+  { key: 'users', label: 'کاربران', icon: Users },
+]
+
+/** The admin console.
+ *
+ *  Split across tabs rather than stacked into one long scroll. The single
+ *  column had the same numbers three times over — revenue as a headline
+ *  card, again in the report header, again as a chart — and ended in an
+ *  unbounded dump of every session ever held, which is where the page
+ *  stopped being readable. Each tab now answers one question, and nothing
+ *  appears twice.
+ */
 function AdminPanel() {
+  const [tab, setTab] = useState('overview')
   const [reports, setReports] = useState({ subscriptions: {}, revenue: {}, attendance: [], popular: {} }); const [trends, setTrends] = useState(null); const [message, setMessage] = useState('')
   const [users, setUsers] = useState([]); const [members, setMembers] = useState([]); const [trainers, setTrainers] = useState([])
   const loadUsers = () => Promise.all([api.get('/auth/users/'), api.get('/auth/members/'), api.get('/auth/trainers/')]).then(([a, b, c]) => { setUsers(getItems(a.data)); setMembers(getItems(b.data)); setTrainers(getItems(c.data)) }).catch((e) => setMessage(errorMessage(e)))
@@ -3380,10 +3503,52 @@ function AdminPanel() {
     api.get('/reports/overview/').then(({ data }) => setOverview(data)).catch(() => {})
     loadUsers()
   }, [])
-  return <section className="page-stack"><PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." /><Message text={message} /><section className="metric-grid"><Metric label="اشتراک فعال" value={reports.subscriptions.active || 0} icon={Users} color="blue" /><Metric label="کل درآمد" value={formatPrice(reports.revenue.total_revenue || 0)} icon={CreditCard} color="green" /><Metric label="پرداخت موفق" value={reports.revenue.successful_payments || 0} icon={Check} color="purple" /></section>
-    {overview && <AnalyticsOverview data={overview} />}
-    {trends && <AnalyticsCharts trends={trends} />}
-    <div className="content-grid"><Card title="محبوب‌ترین کلاس‌ها">{(reports.popular.popular_classes || []).map((item) => <div className="list-row" key={item.name}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{item.name}</strong><small>{item.category}</small></div><span className="capacity">{item.total_bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card><Card title="حضور در جلسات">{reports.attendance.map((item) => <div className="list-row" key={item.session_id}><div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div><span className="capacity">{item.attendance} حضور / {item.bookings} رزرو</span></div>) || <Empty text="داده‌ای موجود نیست." />}</Card></div><UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} /></section>
+
+  // Newest first, and capped. The full history is what made this page a
+  // wall; the recent sessions are the ones an admin can still act on.
+  const recentAttendance = useMemo(
+    () => [...reports.attendance].sort((a, b) => b.session_date.localeCompare(a.session_date)).slice(0, 8),
+    [reports.attendance],
+  )
+
+  return <section className="page-stack">
+    <PageTitle title="مدیریت باشگاه" text="تصویر روشن از عملکرد و درآمد باشگاه." />
+    <Message text={message} />
+    <nav className="admin-tabs" role="tablist">
+      {ADMIN_TABS.map(({ key, label, icon: Icon }) => (
+        <button
+          key={key}
+          role="tab"
+          aria-selected={tab === key}
+          className={tab === key ? 'admin-tab active' : 'admin-tab'}
+          onClick={() => setTab(key)}
+        ><Icon size={16} /> {label}</button>
+      ))}
+    </nav>
+
+    {tab === 'overview' && <>
+      {overview ? <AnalyticsOverview data={overview} /> : <Card title="گزارش عملکرد"><Empty text="در حال بارگذاری گزارش..." /></Card>}
+      <Card title="آخرین جلسات برگزارشده" action="/classes">
+        {recentAttendance.length ? recentAttendance.map((item) => (
+          <div className="list-row" key={item.session_id}>
+            <span className="session-icon"><CalendarDays size={17} /></span>
+            <div><strong>{item.gym_class}</strong><small>{formatDate(item.session_date)}</small></div>
+            <span className="capacity">{toPersianDigits(item.attendance)} حضور از {toPersianDigits(item.bookings)} رزرو</span>
+          </div>
+        )) : <Empty text="داده‌ای موجود نیست." />}
+      </Card>
+    </>}
+
+    {tab === 'classes' && (overview
+      ? <ClassPerformance rows={overview.class_performance || []} />
+      : <Card title="عملکرد کلاس‌ها"><Empty text="در حال بارگذاری..." /></Card>)}
+
+    {tab === 'trends' && (trends
+      ? <AnalyticsCharts trends={trends} />
+      : <Card title="روندها"><Empty text="داده‌ی کافی برای رسم نمودار وجود ندارد." /></Card>)}
+
+    {tab === 'users' && <UserManager users={users} members={members} trainers={trainers} onChanged={loadUsers} setMessage={setMessage} />}
+  </section>
 }
 
 /** The operational half of the admin report: rates rather than totals, and
@@ -3453,28 +3618,34 @@ function AnalyticsOverview({ data }) {
       </Card>
     </div>
 
-    <Card title="عملکرد کلاس‌ها">
-      <p className="reward-hint">نرخ حضور یعنی از رزروکننده‌ها چند نفر آمدند؛ نرخ پر شدن یعنی از ظرفیت چقدر استفاده شد. کلاس با ظرفیت خالی و حضور پایین، کلاسی است که باید حذف یا جابه‌جا شود.</p>
-      {data.class_performance.length ? <div className="class-perf">
-        {data.class_performance.map((c) => (
-          <div className="class-perf-row" key={c.name}>
-            <div className="class-perf-name"><strong>{c.name}</strong><small>{c.category}</small></div>
-            <div className="class-perf-bars">
-              <div className="class-perf-bar">
-                <span>حضور {toPersianDigits(c.attendance_rate)}٪</span>
-                <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.attendance_rate}%` }} transition={{ duration: .6 }} /></div>
-              </div>
-              <div className="class-perf-bar fill">
-                <span>ظرفیت {toPersianDigits(c.fill_rate)}٪</span>
-                <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.fill_rate}%` }} transition={{ duration: .6 }} /></div>
-              </div>
-            </div>
-            <span className="capacity">{toPersianDigits(c.attendance)} از {toPersianDigits(c.bookings)} رزرو</span>
-          </div>
-        ))}
-      </div> : <Empty text="جلسه‌ای در این بازه برگزار نشده." />}
-    </Card>
   </section>
+}
+
+/** Class performance, on its own tab. Attendance rate and fill rate are the
+ *  two numbers that tell an admin whether a class earns its slot, so they
+ *  get the room to be read rather than a footer on a longer page. */
+function ClassPerformance({ rows }) {
+  return <Card title="عملکرد کلاس‌ها">
+    <p className="reward-hint">نرخ حضور یعنی از رزروکننده‌ها چند نفر آمدند؛ نرخ پر شدن یعنی از ظرفیت چقدر استفاده شد. کلاس با ظرفیت خالی و حضور پایین، کلاسی است که باید حذف یا جابه‌جا شود.</p>
+    {rows.length ? <div className="class-perf">
+      {rows.map((c) => (
+        <div className="class-perf-row" key={c.name}>
+          <div className="class-perf-name"><strong>{c.name}</strong><small>{c.category}</small></div>
+          <div className="class-perf-bars">
+            <div className="class-perf-bar">
+              <span>حضور {toPersianDigits(c.attendance_rate)}٪</span>
+              <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.attendance_rate}%` }} transition={{ duration: .6 }} /></div>
+            </div>
+            <div className="class-perf-bar fill">
+              <span>ظرفیت {toPersianDigits(c.fill_rate)}٪</span>
+              <div><motion.i initial={{ width: 0 }} animate={{ width: `${c.fill_rate}%` }} transition={{ duration: .6 }} /></div>
+            </div>
+          </div>
+          <span className="capacity">{toPersianDigits(c.attendance)} از {toPersianDigits(c.bookings)} رزرو</span>
+        </div>
+      ))}
+    </div> : <Empty text="جلسه‌ای در این بازه برگزار نشده." />}
+  </Card>
 }
 
 function AnalyticsCharts({ trends }) {
@@ -3624,7 +3795,7 @@ function UserManager({ users, members, trainers, onChanged, setMessage }) {
   </div>
 }
 
-function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
+function ClassSessionManager({ classes, trainers, sessions = [], onChanged, setMessage }) {
   const [classForm, setClassForm] = useState({ name: '', category: '', description: '' })
   const [classBusy, setClassBusy] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -3673,6 +3844,13 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
     } catch (e) { setMessage(errorMessage(e)) }
   }
 
+  const upcoming = useMemo(() => {
+    const today = todayIso()
+    return sessions
+      .filter((s) => s.session_date >= today)
+      .sort((a, b) => (a.session_date + a.start_time).localeCompare(b.session_date + b.start_time))
+  }, [sessions])
+
   return <div className="content-grid">
       <Card title="ساخت کلاس جدید">
         <form onSubmit={createClass} className="form-grid compact">
@@ -3710,6 +3888,37 @@ function ClassSessionManager({ classes, trainers, onChanged, setMessage }) {
         ) : (
           <div className="list-row" key={c.id}><span className="session-icon"><Dumbbell size={17} /></span><div><strong>{c.name}</strong><small>{c.category || 'بدون دسته‌بندی'}</small></div><button className="icon-button" onClick={() => startEdit(c)} title="ویرایش کلاس"><Edit2 size={16} /></button><button className="icon-button" onClick={() => deleteClass(c.id)} title="حذف کلاس"><Trash2 size={16} /></button></div>
         )) : <Empty text="هنوز کلاسی ثبت نشده است." />}
+      </Card>
+      <Card title="جلسات ساخته‌شده">
+        {/* Upcoming only: a past session cannot usefully be rescheduled, and
+            listing every session ever made buries the ones that matter. */}
+        {upcoming.length ? upcoming.map((s) => (
+          <ManagedRow
+            key={s.id}
+            item={s}
+            endpoint="/sessions/"
+            onChanged={onChanged}
+            setMessage={setMessage}
+            savedText="جلسه به‌روزرسانی شد."
+            deletedText="جلسه حذف شد."
+            confirmText="این جلسه حذف شود؟ رزروهای ثبت‌شده روی آن هم از بین می‌رود."
+            fields={[
+              { key: 'gym_class', label: 'کلاس', type: 'select', required: true, options: classes.map((c) => ({ value: c.id, label: c.name })) },
+              { key: 'trainer', label: 'مربی', type: 'select', required: true, options: trainers.map((t) => ({ value: t.id, label: t.full_name })) },
+              { key: 'session_date', label: 'تاریخ', type: 'date', required: true },
+              { key: 'start_time', label: 'ساعت شروع', type: 'time', required: true },
+              { key: 'end_time', label: 'ساعت پایان', type: 'time', required: true },
+              { key: 'capacity', label: 'ظرفیت', type: 'number', required: true },
+            ]}
+          >
+            <span className="session-icon"><CalendarDays size={17} /></span>
+            <div>
+              <strong>{s.gym_class_name}</strong>
+              <small>{formatDate(s.session_date)} · {toPersianDigits(s.start_time?.slice(0, 5))} تا {toPersianDigits(s.end_time?.slice(0, 5))} · {s.trainer_name}</small>
+            </div>
+            <span className="capacity">{toPersianDigits(s.booked_count ?? 0)} از {toPersianDigits(s.capacity)}</span>
+          </ManagedRow>
+        )) : <Empty text="جلسه‌ای برای روزهای پیش رو ساخته نشده است." />}
       </Card>
     </div>
 }
@@ -4083,6 +4292,85 @@ function Metric({ label, value, icon: Icon, color = 'blue' }) { return <article 
 function Field({ label, type = 'text', value, onChange, required }) { return <label>{label}<input type={type} value={value} onChange={(e) => onChange(e.target.value)} required={required} /></label> }
 function Status({ value }) { return <span className={`status ${value?.toLowerCase()}`}>{value === 'ACTIVE' ? 'فعال' : value === 'EXPIRED' ? 'منقضی' : value === 'CANCELLED' ? 'لغو شده' : value}</span> }
 function Empty({ text }) { return <p className="empty">{text}</p> }
+
+/** One row of an admin-managed list: what it looks like, plus edit and
+ *  delete that actually work.
+ *
+ *  Every "create" in this app needs a matching update and delete, and doing
+ *  that per screen produced four near-identical copies of the same state
+ *  machine. This is that state machine once, driven by a field schema, so a
+ *  session, an event and a competition all edit the same way — and adding
+ *  the next managed thing is a schema, not another copy.
+ *
+ *  `fields` entries: { key, label, type, options?, required?, span? }
+ *  where type is text | textarea | number | time | date | select.
+ */
+function ManagedRow({ item, fields, endpoint, onChanged, setMessage, savedText, deletedText, confirmText, children }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({})
+  const [busy, setBusy] = useState(false)
+
+  const open = () => {
+    // Seed from the record itself so untouched fields keep their value; a
+    // PATCH of only the changed keys would still be correct, but showing
+    // the current values is what makes it an edit rather than a re-entry.
+    const seed = {}
+    fields.forEach((f) => { seed[f.key] = item[f.key] ?? '' })
+    setDraft(seed)
+    setEditing(true)
+  }
+
+  const save = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await api.patch(`${endpoint}${item.id}/`, draft)
+      setMessage(savedText || 'تغییرات ذخیره شد.')
+      setEditing(false)
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  const remove = async () => {
+    if (!window.confirm(confirmText || 'حذف شود؟ این کار قابل بازگشت نیست.')) return
+    setBusy(true)
+    try {
+      await api.delete(`${endpoint}${item.id}/`)
+      setMessage(deletedText || 'حذف شد.')
+      onChanged()
+    } catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
+  }
+
+  if (!editing) return <div className="list-row managed-row">
+    {children}
+    <button className="icon-button" onClick={open} title="ویرایش"><Edit2 size={16} /></button>
+    <button className="icon-button" onClick={remove} disabled={busy} title="حذف"><Trash2 size={16} /></button>
+  </div>
+
+  return <form className="managed-edit" onSubmit={save}>
+    {fields.map((f) => {
+      const set = (v) => setDraft((d) => ({ ...d, [f.key]: v }))
+      const wide = f.span === 'full' || f.type === 'textarea'
+      return <div className={wide ? 'managed-field wide' : 'managed-field'} key={f.key}>
+        {f.type === 'select' ? (
+          <label>{f.label}<select value={draft[f.key]} onChange={(e) => set(e.target.value)} required={f.required}>
+            {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select></label>
+        ) : f.type === 'textarea' ? (
+          <label>{f.label}<textarea rows={2} value={draft[f.key]} onChange={(e) => set(e.target.value)} /></label>
+        ) : f.type === 'date' ? (
+          <JalaliDateField label={f.label} value={draft[f.key]} onChange={set} required={f.required} />
+        ) : (
+          <Field label={f.label} type={f.type || 'text'} value={draft[f.key]} onChange={set} required={f.required} />
+        )}
+      </div>
+    })}
+    <div className="managed-actions">
+      <button className="button primary" disabled={busy}><Check size={16} /> ذخیره</button>
+      <button type="button" className="button muted" onClick={() => setEditing(false)}><X size={16} /> انصراف</button>
+    </div>
+  </form>
+}
 function Message({ text }) {
   return <AnimatePresence>
     {text && <motion.p className="form-message" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .22 }}>{text}</motion.p>}

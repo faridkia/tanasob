@@ -5,9 +5,9 @@ Trainers create/update/archive workout and diet plans for their assigned
 members (FR-PLAN-1..FR-PLAN-4). Members can view their own plans (FR-PLAN-3).
 """
 
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -36,9 +36,12 @@ def _trainer_member_ids(trainer_user):
 
 
 class ExerciseListCreateView(generics.ListCreateAPIView):
-    """The exercise library: shared/global exercises plus the gym's own
-    additions. Admin and trainer manage it; every authenticated user reads
-    it (needed to render a plan's exercise names/videos)."""
+    """The gym's exercise library. Admin and trainer manage it; every
+    authenticated user reads it (needed to render a plan's exercise
+    names/videos).
+
+    Each gym owns its own rows — there is no cross-gym shared library, so an
+    admin editing one can never change what another gym sees."""
 
     serializer_class = ExerciseSerializer
 
@@ -48,9 +51,7 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = Exercise.objects.filter(
-            Q(organization=self.request.user.organization) | Q(organization__isnull=True)
-        )
+        qs = Exercise.objects.filter(organization=self.request.user.organization)
         muscle_group = self.request.query_params.get('muscle_group')
         if muscle_group:
             qs = qs.filter(muscle_group=muscle_group)
@@ -66,11 +67,11 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
 class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Edit or remove a library exercise.
 
-    An admin runs the gym's library, so they may change anything their gym
-    owns. A trainer may only touch what they added themselves — otherwise
-    one trainer could rewrite or delete an exercise another trainer's plans
-    depend on. The shared/global library (organization=None) is read-only
-    for everyone.
+    An admin runs the gym's library, so they may change anything in it —
+    including the seeded exercises, which are now per-gym copies rather than
+    rows shared with every other gym. A trainer may only touch what they
+    added themselves; otherwise one trainer could rewrite or delete an
+    exercise another trainer's plans depend on.
     """
 
     serializer_class = ExerciseSerializer
@@ -81,6 +82,18 @@ class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.user.is_admin_role:
             return qs
         return qs.filter(created_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        # WorkoutPlanItem.exercise is PROTECT, so deleting an exercise a plan
+        # still uses raises rather than quietly gutting someone's programme.
+        # Without this the admin would get a 500 and no idea why.
+        used = instance.plan_items.count()
+        if used:
+            raise ValidationError(
+                f'این حرکت در {used} برنامه تمرینی استفاده شده و حذف نمی‌شود. '
+                'اول آن را از برنامه‌ها بردار.'
+            )
+        instance.delete()
 
 
 class WorkoutPlanListCreateView(generics.ListCreateAPIView):

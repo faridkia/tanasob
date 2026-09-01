@@ -27,7 +27,12 @@ class BookingSerializer(serializers.ModelSerializer):
         return {
             'id': s.id,
             'gym_class': s.gym_class.name,
+            # The ids, not just the display names: the calendar links straight
+            # through to the class and trainer pages, and a name is not
+            # something you can build a URL from.
+            'gym_class_id': s.gym_class_id,
             'trainer': s.trainer.user.full_name,
+            'trainer_id': s.trainer_id,
             'session_date': s.session_date,
             'start_time': s.start_time,
             'end_time': s.end_time,
@@ -55,6 +60,7 @@ class AttendanceSerializer(serializers.ModelSerializer):
         return {
             'id': s.id,
             'gym_class': s.gym_class.name,
+            'gym_class_id': s.gym_class_id,
             'session_date': s.session_date,
             'start_time': s.start_time,
         }

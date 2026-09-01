@@ -2803,31 +2803,38 @@ input:focus, select:focus {
 /* ============================================================
    Theme switch — circular reveal
    ------------------------------------------------------------
-   The old and new themes are both painted during the transition; the new
-   one is clipped to a circle that grows from the toggle button (the
-   keyframes are driven from JS, which knows where the button is).
+   A single viewport-sized disc in the destination background colour, grown
+   from the toggle button and then faded off. Geometry and colour come from
+   JS (only it knows where the button is); everything here exists to keep the
+   animation on the compositor.
 
-   The default cross-fade is switched off deliberately: fading two full
-   palettes through each other turns every surface muddy grey at the
-   midpoint. Holding the old theme still and wiping the new one over it
-   keeps both readable the whole way through.
+   Not the View Transitions API: that snapshots the entire scrollable
+   document, and re-rastering a ~2800px-tall page — twice, doubled again on
+   a retina display, with backdrop-filter surfaces all over it — is what made
+   the sweep stutter on Chrome.
    ============================================================ */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+.theme-wipe {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow: hidden;      /* the disc is wider than the viewport by design */
+  pointer-events: none;  /* never swallow a click mid-sweep */
 }
-/* Both layers are painted for the whole sweep; the JS drives their timing.
-   Without this the browser's own default cross-fade fights the clip-path
-   and the change lands in one jump partway through. */
-::view-transition-image-pair(root) { isolation: none; }
-::view-transition-old(root) { z-index: 0; }
-::view-transition-new(root) { z-index: 1; }
+.theme-wipe-disc {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  /* Promote both layers up front. Without this Chrome decides mid-animation
+     and the first frame or two are dropped while it re-rasters. */
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.theme-wipe { will-change: opacity; }
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) { animation: none !important; }
+  /* JS already switches instantly here, so the overlay is never built —
+     this is belt and braces in case one is left over. */
+  .theme-wipe { display: none; }
 }
 
 /* ============================================================
@@ -3208,3 +3215,74 @@ input:focus, select:focus {
 .trainer-row-photo { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; flex: none; border: 1px solid var(--border); }
 .month-chip.more { cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .month-chip.more:hover { color: var(--accent-ink); }
+
+/* ============================================================
+   Admin console — tabs and managed lists
+   ------------------------------------------------------------
+   The admin page used to be one column holding every report at once. Tabs
+   let each view own the width it needs, and stop the same numbers being
+   read three times on the way down the page.
+   ============================================================ */
+.admin-tabs {
+  display: flex;
+  gap: .4rem;
+  padding: .35rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* Narrow screens scroll the strip rather than wrapping it into a second
+     row that pushes the content down. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin-tabs::-webkit-scrollbar { display: none; }
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  flex: 0 0 auto;
+  padding: .6rem 1rem;
+  border: 0;
+  border-radius: calc(var(--radius-lg) - .35rem);
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-weight: 700;
+  font-size: .88rem;
+  cursor: pointer;
+  transition: background .18s, color .18s;
+}
+.admin-tab:hover { color: var(--text); background: var(--bg); }
+.admin-tab.active { background: var(--accent); color: #fff; }
+.admin-tab.active:hover { background: var(--accent); }
+
+/* Managed list: a record plus its edit/delete controls. */
+.managed-list { margin-top: 1.1rem; border-top: 1px solid var(--border); padding-top: .9rem; }
+.managed-list-title { margin: 0 0 .5rem; font-size: .9rem; font-weight: 700; color: var(--text-soft); }
+.managed-note { margin: .6rem 0 0; font-size: .78rem; color: var(--text-soft); }
+.managed-row .icon-button { flex: none; }
+
+.managed-edit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .7rem;
+  padding: .9rem;
+  margin: .4rem 0;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.managed-field.wide { grid-column: 1 / -1; }
+.managed-edit label { display: grid; gap: .3rem; font-size: .8rem; font-weight: 700; color: var(--text-soft); }
+.managed-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: .5rem;
+  /* Buttons size to their text instead of stretching across the grid. */
+  justify-content: flex-start;
+}
+.managed-actions .button { flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  .managed-edit { grid-template-columns: minmax(0, 1fr); }
+}
