@@ -412,10 +412,15 @@ function RegisterGymPage({ onLogin }) {
  *  for reduced motion — a full-screen wipe is exactly the kind of movement
  *  that setting exists to suppress. */
 function useThemeTransition(theme, setTheme) {
+  const busy = useRef(false)
   return (event) => {
     const next = theme === 'dark' ? 'light' : 'dark'
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (!document.startViewTransition || reduced) return setTheme(next)
+    // A second click mid-sweep makes the browser abandon the first
+    // transition, which leaves the wipe half-drawn over the new palette.
+    if (busy.current) return
+    busy.current = true
 
     // Origin = the button's centre, so the new theme appears to pour out of
     // the thing the user touched.
@@ -429,25 +434,31 @@ function useThemeTransition(theme, setTheme) {
     document.documentElement.style.setProperty('--theme-r', `${radius}px`)
 
     const transition = document.startViewTransition(() => {
+      // The attribute is written here, by hand, rather than left to the
+      // useEffect that normally owns it. useEffect is a passive effect, so
+      // React is free to run it after this callback returns — and by then
+      // the browser has already snapshotted the "new" state, capturing the
+      // OLD palette. The wipe would reveal the colours it started with and
+      // the real theme would land a frame later as a jump.
+      document.documentElement.dataset.theme = next
       flushSync(() => setTheme(next))
     })
-    transition.ready.then(() => {
-      // Two coordinated animations, not one. Growing only the new layer
-      // leaves the OLD snapshot at full opacity underneath for the whole
-      // sweep and then cutting it dead at the end — which is the "snap"
-      // halfway through. Fading the old layer out over the same curve makes
-      // the wipe read as continuous.
-      const easing = 'cubic-bezier(.32,.72,.34,1)'
-      const duration = 620
+    // ready/finished REJECT when the browser skips the transition — a
+    // background tab, or a second toggle aborting this one. Both need a
+    // catch or every skipped switch logs an unhandled rejection; .finally()
+    // is not enough on its own, it re-throws what it was handed.
+    transition.ready.catch(() => null).then((skipped) => {
+      if (skipped === null) return
+      // Only the new layer moves. The old one is held still underneath by
+      // CSS (animation: none) and is fully covered by the time the circle
+      // reaches the far corner, so there is nothing to fade — fading it
+      // just opens a gap that shows the page background through both.
       document.documentElement.animate(
         { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-        { duration, easing, pseudoElement: '::view-transition-new(root)' },
-      )
-      document.documentElement.animate(
-        { opacity: [1, 1, 0] , offset: undefined },
-        { duration, easing, pseudoElement: '::view-transition-old(root)' },
+        { duration: 620, easing: 'cubic-bezier(.32,.72,.34,1)', pseudoElement: '::view-transition-new(root)' },
       )
     })
+    transition.finished.catch(() => {}).then(() => { busy.current = false })
   }
 }
 
