@@ -877,7 +877,7 @@ function CaloriesBurnedCard({ summary }) {
 const TIER_LADDER = [
   { label: 'برنزی', emoji: '🥉', sessions: 36, discount: 3 },
   { label: 'نقره‌ای', emoji: '🥈', sessions: 72, discount: 7 },
-  { label: 'طلایی', emoji: '🥇', sessions: 144, discount: 14 },
+  { label: 'طلایی', emoji: '🥇', sessions: 144, discount: 10 },
   { label: 'الماس', emoji: '💎', sessions: 288, discount: 15 },
 ]
 
