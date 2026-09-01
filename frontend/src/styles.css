@@ -2437,8 +2437,18 @@ input:focus, select:focus {
   width: fit-content;
 }
 .blog-back-link:hover { color: var(--text); }
-.blog-detail-cover { border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; max-height: 320px; }
-.blog-detail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The article header shows the WHOLE cover. It used to be clamped to 320px
+   with object-fit:cover, which silently cropped a 3:2 photo down to roughly
+   a 3:1 band — the top and bottom of every image were simply gone. Letting
+   the height follow the natural ratio costs nothing here: there is one image
+   at the top of a page the reader has already chosen to open. */
+.blog-detail-cover {
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 1rem;
+  background: var(--bg);
+}
+.blog-detail-cover img { width: 100%; height: auto; display: block; }
 .blog-detail-meta { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .8rem; color: var(--muted); margin-bottom: .5rem; }
 .blog-detail-title { margin: 0 0 .8rem; }
 .blog-detail-content { display: flex; flex-direction: column; gap: .8rem; line-height: 1.9; margin-bottom: 1rem; }
