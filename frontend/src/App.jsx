@@ -3574,33 +3574,74 @@ function Profile({ user, setUser }) {
 
 /** The two visibility switches, together in one place so it's obvious what
  *  each one does and that they're independent. */
+/** iOS-style switch.
+ *
+ *  A real <button role="switch">, not a styled checkbox: it keeps keyboard
+ *  and screen-reader behaviour without fighting the global input styles,
+ *  and it can carry a pending state while the change is in flight. */
+function Toggle({ checked, onChange, busy, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={busy}
+      className={`toggle ${checked ? 'on' : ''} ${busy ? 'busy' : ''}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="toggle-knob" />
+    </button>
+  )
+}
+
 function PrivacyCard({ user, setUser, setMessage }) {
   const member = user.role === 'MEMBER'
   const [profilePublic, setProfilePublic] = useState(user.is_profile_public !== false)
   const [onLeaderboard, setOnLeaderboard] = useState(user.member?.show_on_leaderboard !== false)
+  const [pending, setPending] = useState(null)
 
-  const save = async (patch, apply) => {
+  /** Flip immediately so the switch feels instant, then persist — and put
+   *  it BACK if the server refuses. Without the rollback a failed request
+   *  leaves the toggle showing a setting that was never saved, which is
+   *  worse than not moving at all for something people rely on for privacy. */
+  const persist = async (key, value, setLocal) => {
+    const previous = !value
+    setLocal(value)
+    setPending(key)
     try {
-      const { data } = await api.patch('/auth/me/', patch)
+      const { data } = await api.patch('/auth/me/', { [key]: value })
       setUser({ ...user, ...data })
-      apply()
-      setMessage('تنظیمات حریم خصوصی ذخیره شد.')
-    } catch (e) { setMessage(errorMessage(e)) }
+      setMessage('ذخیره شد.')
+    } catch (e) {
+      setLocal(previous)
+      setMessage(`ذخیره نشد: ${errorMessage(e)}`)
+    } finally {
+      setPending(null)
+    }
   }
 
   return <Card title="حریم خصوصی">
-    <label className="privacy-row">
-      <input type="checkbox" checked={profilePublic}
-        onChange={(e) => { const v = e.target.checked; setProfilePublic(v); save({ is_profile_public: v }, () => {}) }} />
+    <div className="privacy-row">
+      <Toggle
+        checked={profilePublic}
+        busy={pending === 'is_profile_public'}
+        label="پروفایلم عمومی باشد"
+        onChange={(v) => persist('is_profile_public', v, setProfilePublic)}
+      />
       <span><strong>پروفایلم عمومی باشد</strong>
         <small>اگر خاموش کنی، بقیه فقط نام و سطحت را می‌بینند — کلاس‌هایی که رفته‌ای، آمار و فعالیتت پنهان می‌شود. خودت و مدیر باشگاه همیشه کامل می‌بینید.</small></span>
-    </label>
-    {member && <label className="privacy-row">
-      <input type="checkbox" checked={onLeaderboard}
-        onChange={(e) => { const v = e.target.checked; setOnLeaderboard(v); save({ show_on_leaderboard: v }, () => {}) }} />
+    </div>
+    {member && <div className="privacy-row">
+      <Toggle
+        checked={onLeaderboard}
+        busy={pending === 'show_on_leaderboard'}
+        label="در جدول امتیازات نمایش داده شوم"
+        onChange={(v) => persist('show_on_leaderboard', v, setOnLeaderboard)}
+      />
       <span><strong>در جدول امتیازات نمایش داده شوم</strong>
         <small>اگر خاموش کنی، اسمت از رتبه‌بندی و از آرشیو نفرات برتر حذف می‌شود. امتیاز خودت همچنان محاسبه و به خودت نشان داده می‌شود.</small></span>
-    </label>}
+    </div>}
   </Card>
 }
 
