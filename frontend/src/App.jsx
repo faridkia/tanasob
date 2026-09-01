@@ -2581,6 +2581,10 @@ function MyCalendarPage({ user }) {
       id: `s-${s.id}`,
       session_detail: {
         gym_class: s.gym_class_name, trainer: s.trainer_name,
+        // The ids as well as the names — this object stands in for the one
+        // the bookings API returns, and the agenda links through to the
+        // class and trainer pages by id.
+        gym_class_id: s.gym_class, trainer_id: s.trainer,
         session_date: s.session_date, start_time: s.start_time, end_time: s.end_time,
       },
       capacity: s.capacity, booked: s.booked_count,
@@ -2764,7 +2768,10 @@ function DayAgenda({ date, data, meals, onStartWorkout, canStart = true }) {
             <small>{b.session_detail.trainer} · {toPersianDigits(b.session_detail.start_time?.slice(0, 5))} تا {toPersianDigits(b.session_detail.end_time?.slice(0, 5))}
               {b.capacity != null && ` · ${toPersianDigits(b.booked)} از ${toPersianDigits(b.capacity)} نفر`}</small>
           </div>
-          <Link className="button muted" to={`/classes/${b.session_detail.gym_class_id}`}>جزئیات کلاس</Link>
+          {/* Only offer the link when there is somewhere to go: an absent id
+              would build /classes/undefined and 404 on the way in. */}
+          {b.session_detail.gym_class_id != null &&
+            <Link className="button muted" to={`/classes/${b.session_detail.gym_class_id}`}>جزئیات کلاس</Link>}
         </div>
       </article>
     ))}

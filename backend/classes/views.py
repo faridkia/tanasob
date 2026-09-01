@@ -127,9 +127,11 @@ class ClassSessionListCreateView(generics.ListCreateAPIView):
         if user.is_trainer:
             qs = qs.filter(trainer__user=user)
 
-        # Members only see upcoming sessions.
+        # Members are held to upcoming sessions whatever they ask for; the
+        # schedule they get is the one they can still act on. Staff may look
+        # back, but only by saying so — see the default below.
         if user.is_member:
-            qs = qs.filter(session_date__gte=timezone.now().date())
+            qs = qs.filter(session_date__gte=timezone.localdate())
 
         # Optional query params: from / to date range.
         date_from = self.request.query_params.get('from')
@@ -138,6 +140,20 @@ class ClassSessionListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(session_date__gte=date_from)
         if date_to:
             qs = qs.filter(session_date__lte=date_to)
+
+        # Default to upcoming sessions when the caller has not asked for a
+        # particular stretch of time.
+        #
+        # Members were always filtered this way; staff were not, and since
+        # sessions sort oldest-first the default page handed an admin twenty
+        # rows from last month with nothing upcoming on it. Every screen that
+        # says "upcoming" then had to remember to pass ?from= itself, and
+        # five of them were written before anyone noticed the sixth had not.
+        # Asking for history is the deliberate act — the calendar passes an
+        # explicit window and still gets it.
+        asked_for_a_period = date_from or date_to or self.request.query_params.get('session_date')
+        if not asked_for_a_period:
+            qs = qs.filter(session_date__gte=timezone.localdate())
         return qs
 
 
