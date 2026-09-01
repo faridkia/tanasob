@@ -3150,15 +3150,22 @@ input:focus, select:focus {
   /* The overshoot in this curve is what gives the flick its spring. */
   transition: transform .32s cubic-bezier(.34, 1.56, .48, 1), width .22s ease;
 }
-/* RTL-safe: inset-inline-start + a positive translate moves the knob toward
-   the end of the track in both directions, so this works unchanged under
-   dir="rtl" without a mirrored rule. */
-.toggle.on .toggle-knob { transform: translateX(20px); }
+/* translateX is PHYSICAL, not logical. Paired with inset-inline-start it
+   parks the knob at the right edge under dir=rtl and then pushes it further
+   right, straight out of the track. The travel direction has to be mirrored
+   explicitly; --knob-travel carries the sign. */
+.toggle { --knob-travel: 20px; --knob-squash: 15px; }
+[dir='rtl'] .toggle { --knob-travel: -20px; --knob-squash: -15px; }
+.toggle.on .toggle-knob { transform: translateX(var(--knob-travel)); }
 /* Squash mid-travel, the way a real switch's cap deforms under the flick. */
 .toggle:active:not(:disabled) .toggle-knob { width: 31px; }
-.toggle.on:active:not(:disabled) .toggle-knob { width: 31px; transform: translateX(15px); }
+.toggle.on:active:not(:disabled) .toggle-knob { width: 31px; transform: translateX(var(--knob-squash)); }
 .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .toggle.busy { opacity: .65; cursor: progress; }
 @media (prefers-reduced-motion: reduce) {
   .toggle, .toggle-knob { transition: none; }
 }
+.user-edit-row { gap: .5rem; }
+.user-edit-row input { flex: 1; min-width: 0; }
+.user-manage-note { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); font-size: .78rem; }
+.auth-note { color: var(--muted); font-size: .8rem; line-height: 1.8; text-align: center; margin-top: 1rem; }

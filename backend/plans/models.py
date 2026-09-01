@@ -56,6 +56,13 @@ class Exercise(models.Model):
         'organizations.Organization', on_delete=models.CASCADE,
         null=True, blank=True, related_name='exercises',
     )
+    # Who added it. Without this the server cannot tell one trainer's
+    # exercise from another's, so "trainers edit only their own" would be
+    # unenforceable. Null for the shared/seeded library.
+    created_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='created_exercises',
+    )
     name = models.CharField(max_length=150)
     muscle_group = models.CharField(
         max_length=20, choices=MuscleGroup.choices, default=MuscleGroup.FULL_BODY

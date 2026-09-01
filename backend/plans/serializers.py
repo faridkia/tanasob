@@ -15,10 +15,22 @@ def validate_image_size(value):
 # ---- Exercise library ----
 
 class ExerciseSerializer(serializers.ModelSerializer):
+    can_edit = serializers.SerializerMethodField()
+
+    def get_can_edit(self, obj):
+        """Whether THIS viewer may edit it — so the UI shows the buttons that
+        will actually work instead of ones the API will refuse."""
+        user = self.context.get('request').user if self.context.get('request') else None
+        if not user or obj.organization_id is None:
+            return False
+        if obj.organization_id != user.organization_id:
+            return False
+        return user.is_admin_role or obj.created_by_id == user.id
+
     class Meta:
         model = Exercise
-        fields = ('id', 'organization', 'name', 'muscle_group', 'video_url', 'description', 'created_at')
-        read_only_fields = ('id', 'organization', 'created_at')
+        fields = ('id', 'organization', 'created_by', 'can_edit', 'name', 'muscle_group', 'video_url', 'description', 'created_at')
+        read_only_fields = ('id', 'organization', 'created_by', 'can_edit', 'created_at')
 
 
 # ---- Workout Plan (day-split) ----

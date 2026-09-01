@@ -60,17 +60,27 @@ class ExerciseListCreateView(generics.ListCreateAPIView):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(organization=self.request.user.organization)
+        serializer.save(organization=self.request.user.organization, created_by=self.request.user)
 
 
 class ExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Edit or remove a library exercise.
+
+    An admin runs the gym's library, so they may change anything their gym
+    owns. A trainer may only touch what they added themselves — otherwise
+    one trainer could rewrite or delete an exercise another trainer's plans
+    depend on. The shared/global library (organization=None) is read-only
+    for everyone.
+    """
+
     serializer_class = ExerciseSerializer
     permission_classes = [IsAdminOrTrainer]
 
     def get_queryset(self):
-        # Trainers/admins may only edit their own gym's custom exercises —
-        # the shared/global library (organization=None) is read-only here.
-        return Exercise.objects.filter(organization=self.request.user.organization)
+        qs = Exercise.objects.filter(organization=self.request.user.organization)
+        if self.request.user.is_admin_role:
+            return qs
+        return qs.filter(created_by=self.request.user)
 
 
 class WorkoutPlanListCreateView(generics.ListCreateAPIView):

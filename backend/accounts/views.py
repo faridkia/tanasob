@@ -4,7 +4,7 @@ from datetime import timedelta
 import qrcode
 from django.http import HttpResponse
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -32,23 +32,26 @@ def _tokens_for(user):
 
 
 class RegisterView(generics.CreateAPIView):
-    """Register a new Member or Trainer (FR-AUTH-1)."""
+    """Create a Member or Trainer account — admin only.
+
+    Self-signup is deliberately closed: a gym's roster is who actually paid
+    and walked in, so accounts are created by the gym's admin. Members and
+    trainers log in with credentials they are given. The one public
+    entry point left is registering a whole new gym (organizations app),
+    which creates that gym's first admin.
+    """
 
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAdmin]
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+        data['organization'] = request.user.organization_id
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        return Response(
-            {
-                'user': UserSerializer(user).data,
-                'tokens': _tokens_for(user),
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
 class LoginView(APIView):
@@ -180,8 +183,15 @@ class AdminUserListCreateView(generics.ListCreateAPIView):
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 
-class AdminUserDetailView(generics.RetrieveUpdateAPIView):
-    """Admin edits or activates/deactivates a single Trainer/Member account."""
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Admin edits, deactivates or deletes a single Trainer/Member account.
+
+    Deleting is permanent and cascades — a member's bookings, attendance,
+    plans and payment history go with them, which also rewrites the gym's
+    own reports. Deactivating (is_active=False) keeps the history and blocks
+    the login, so the UI offers that first and treats deletion as the
+    exception.
+    """
 
     permission_classes = [IsAdmin]
 
@@ -193,6 +203,13 @@ class AdminUserDetailView(generics.RetrieveUpdateAPIView):
 
     def get_serializer_class(self):
         return AdminUserUpdateSerializer if self.request.method in ('PUT', 'PATCH') else UserSerializer
+
+    def perform_destroy(self, instance):
+        # The queryset already excludes admins, so an admin cannot delete
+        # themselves or a peer through this endpoint. Belt and braces:
+        if instance.pk == self.request.user.pk:
+            raise ValidationError('نمی‌توانی حساب خودت را حذف کنی.')
+        instance.delete()
 
 
 class TrainerListView(generics.ListAPIView):

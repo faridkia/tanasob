@@ -50,7 +50,9 @@ const EN_TRANSLATIONS = {
   'تکرار رمز عبور': 'Confirm password', 'باشگاه': 'Gym', 'انتخاب باشگاه': 'Select a gym',
   'نوع حساب': 'Account type', 'عضو باشگاه': 'Member', 'مربی': 'Trainer',
   'لطفاً صبر کنید...': 'Please wait...', 'ساخت حساب': 'Create account', 'ورود به تناسب': 'Log in to Tanasob',
-  'حساب داری؟ وارد شو': 'Already have an account? Log in', 'حساب نداری؟ ثبت‌نام کن': "Don't have an account? Sign up",
+  'حساب کاربری را مدیر باشگاه برایت می‌سازد. اگر هنوز حسابی نداری با باشگاهت تماس بگیر.':
+    'Your gym\'s admin creates your account. If you don\'t have one yet, contact your gym.',
+  'ورود به حساب': 'Log in',
   'می‌خوای باشگاه خودتو ثبت کنی؟': 'Want to register your own gym?',
   'ثبت باشگاه جدید': 'Register a new gym', 'باشگاه خودت را راه‌اندازی کن': 'Launch your own gym',
   'یک فضای کاملاً مستقل برای باشگاهت با اولین حساب مدیر بساز.': 'Create a fully independent space for your gym, with its first admin account.',
@@ -251,7 +253,10 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <AuthPage onLogin={login} />} />
-      <Route path="/register" element={user ? <Navigate to="/" /> : <AuthPage register onLogin={login} />} />
+      {/* Self-signup is closed: a gym's roster is who actually joined, so
+          the admin creates accounts. Registering a whole new GYM is still
+          public (/register-gym) — that's how a gym owner onboards. */}
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route path="/register-gym" element={user ? <Navigate to="/" /> : <RegisterGymPage onLogin={login} />} />
       {!user && <Route path="/" element={<Landing />} />}
       <Route path="*" element={user ? (
@@ -277,7 +282,7 @@ function Landing() {
       <div className="landing-hero-image" style={{ backgroundImage: `url(${landingImage})` }} />
       <header className="landing-nav">
         <div className="landing-nav-actions">
-          <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> {t('ورود / ثبت‌نام')}</Link>
+          <Link to="/login" className="landing-auth-btn"><CircleUserRound size={18} /> {t('ورود به حساب')}</Link>
           <LanguageToggle className="landing-lang-toggle" />
         </div>
         <nav className="landing-nav-links">{LANDING_NAV.map((label, index) => <a key={label} href="#" className={index === 0 ? 'active' : ''} onClick={(e) => e.preventDefault()}>{t(label)}</a>)}</nav>
@@ -349,7 +354,7 @@ function AuthPage({ register, onLogin }) {
             {error && <p className="form-error">{error}</p>}
             <button className="button primary" disabled={busy}>{busy ? t('لطفاً صبر کنید...') : register ? t('ساخت حساب') : t('ورود به تناسب')} <ChevronLeft size={18} /></button>
           </form>
-          <button className="text-button" onClick={() => navigate(register ? '/login' : '/register')}>{register ? t('حساب داری؟ وارد شو') : t('حساب نداری؟ ثبت‌نام کن')}</button>
+          <p className="auth-note">{t('حساب کاربری را مدیر باشگاه برایت می‌سازد. اگر هنوز حسابی نداری با باشگاهت تماس بگیر.')}</p>
           {register && <Link to="/register-gym" className="text-button"><Building2 size={15} /> {t('می‌خوای باشگاه خودتو ثبت کنی؟')}</Link>}
         </div>
       </section>
@@ -454,7 +459,8 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
     ['/', 'خانه', LayoutDashboard],
     // Second on purpose: the mobile bar only shows the first five, and the
     // calendar is the surface a member opens the app for.
-    ...(!admin ? [['/calendar', trainer ? 'برنامه‌سازی' : 'تقویم من', ClipboardList]] : []),
+    ['/calendar', admin || trainer ? 'تقویم باشگاه' : 'تقویم من', CalendarDays],
+    ...(trainer ? [['/plan-builder', 'برنامه‌سازی', ClipboardList]] : []),
     ['/classes', 'کلاس‌ها', CalendarDays],
     ...(member ? [['/goals', 'اهداف من', Target], ['/membership', 'اشتراک من', CreditCard], ['/card', 'کارت عضویت', QrCode], ['/progress', 'پیشرفت بدن', Activity]] : []),
     ...(!admin ? [['/messages', 'گفت‌وگوها', MessageCircle]] : []),
@@ -491,7 +497,8 @@ function Shell({ user, setUser, logout, theme, setTheme }) {
             <Route path="/trainers" element={<TrainersPage />} />
             <Route path="/trainers/:id" element={<TrainerProfilePage user={user} />} />
             <Route path="/u/:id" element={<MemberProfilePage />} />
-            <Route path="/calendar" element={admin ? <Navigate to="/" /> : trainer ? <TrainerPlans user={user} /> : <MyCalendarPage user={user} />} />
+            <Route path="/calendar" element={<MyCalendarPage user={user} />} />
+            <Route path="/plan-builder" element={trainer ? <TrainerPlans user={user} /> : <Navigate to="/" />} />
             {/* The page was called "برنامه‌های من" at /plans before it became a
                 calendar; keep old links and bookmarks working. */}
             <Route path="/plans" element={<Navigate to="/calendar" replace />} />
@@ -1843,7 +1850,10 @@ function ExerciseLibrary() {
           <div className="list-row" key={ex.id}>
             <span className="icon-chip blue"><Dumbbell size={16} /></span>
             <div><strong>{ex.name}</strong><small>{muscleGroupLabel(ex.muscle_group)}{ex.video_url && ' · دارای ویدئو'}</small></div>
-            {ex.organization && <>
+            {/* can_edit is computed server-side: an admin may edit anything
+                their gym owns, a trainer only what they added. The shared
+                library is read-only for everyone. */}
+            {ex.can_edit && <>
               <button className="icon-button" onClick={() => startEdit(ex)}><Edit2 size={15} /></button>
               <button className="icon-button" onClick={() => remove(ex.id)}><Trash2 size={15} /></button>
             </>}
@@ -2369,22 +2379,46 @@ const AGENDA_KINDS = {
  * continuous date range, so every single cell would carry one and the
  * marker would say nothing. They appear in the agenda for the selected day,
  * where they're actually actionable. */
+/** The gym calendar.
+ *
+ *  Same surface for everyone, different scope and powers:
+ *  a member sees their own plan, their bookings and gym-wide events and can
+ *  start a session; a trainer sees the sessions they teach; an admin sees
+ *  every session in the gym. Staff never get a start button — running a
+ *  workout is the member's own record. */
 function MyCalendarPage({ user }) {
   const navigate = useNavigate()
+  const staff = user.role === 'ADMIN' || user.role === 'TRAINER'
   const [workouts, setWorkouts] = useState([])
   const [diets, setDiets] = useState([])
   const [bookings, setBookings] = useState([])
   const [events, setEvents] = useState([])
+  const [competitions, setCompetitions] = useState([])
+  const [sessions, setSessions] = useState([])
   const [message, setMessage] = useState('')
   const [selectedDate, setSelectedDate] = useState(todayIso)
 
   useEffect(() => {
-    Promise.all([
-      api.get('/workout-plans/'), api.get('/diet-plans/'),
-      api.get('/bookings/'), api.get('/events/'),
-    ]).then(([w, d, b, e]) => {
-      setWorkouts(getItems(w.data)); setDiets(getItems(d.data))
-      setBookings(getItems(b.data)); setEvents(getItems(e.data))
+    // Staff read the schedule itself; members read what they signed up for.
+    // /sessions/ is already role-scoped server-side: a trainer gets their
+    // own sessions, an admin gets the whole gym.
+    // A wide window with a large page: the calendar can be scrolled a few
+    // months either way, and the default 20-row page returned whichever
+    // sessions happened to sort first — for an admin, who also sees past
+    // ones, that was the wrong month entirely.
+    const from = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10)
+    const to = new Date(Date.now() + 150 * 864e5).toISOString().slice(0, 10)
+    const sessionsUrl = `/sessions/?from=${from}&to=${to}&page_size=400`
+    const calls = staff
+      ? [api.get(sessionsUrl), api.get('/events/'), api.get('/competitions/')]
+      : [api.get('/workout-plans/'), api.get('/diet-plans/'), api.get('/bookings/'), api.get('/events/'), api.get('/competitions/')]
+    Promise.all(calls).then((res) => {
+      if (staff) {
+        setSessions(getItems(res[0].data)); setEvents(getItems(res[1].data)); setCompetitions(getItems(res[2].data))
+      } else {
+        setWorkouts(getItems(res[0].data)); setDiets(getItems(res[1].data))
+        setBookings(getItems(res[2].data)); setEvents(getItems(res[3].data)); setCompetitions(getItems(res[4].data))
+      }
     }).catch((err) => setMessage(errorMessage(err)))
   }, [])
 
@@ -2401,9 +2435,19 @@ function MyCalendarPage({ user }) {
       (plan.days || []).forEach((day) => push(day.date, 'workouts', { plan, day })))
     bookings.filter((b) => b.status === 'CONFIRMED').forEach((b) =>
       push(b.session_detail?.session_date, 'classes', b))
+    // Staff see the schedule as scheduled, not as booked.
+    sessions.forEach((s) => push(s.session_date, 'classes', {
+      id: `s-${s.id}`,
+      session_detail: {
+        gym_class: s.gym_class_name, trainer: s.trainer_name,
+        session_date: s.session_date, start_time: s.start_time, end_time: s.end_time,
+      },
+      capacity: s.capacity, booked: s.booked_count,
+    }))
     events.forEach((e) => push(e.event_date, 'events', e))
+    competitions.forEach((c) => push(c.start_date, 'events', { ...c, title: `مسابقه: ${c.title}`, location: '' }))
     return map
-  }, [workouts, bookings, events])
+  }, [workouts, bookings, events, competitions, sessions])
 
   const mealsFor = (date) => diets
     .filter((d) => !d.is_archived && d.start_date <= date && date <= d.end_date)
@@ -2414,12 +2458,17 @@ function MyCalendarPage({ user }) {
 
   return <section className="page-stack calendar-page">
     <div className="calendar-page-head">
-      <PageTitle title="تقویم من" text="تمرین‌ها، کلاس‌ها، رویدادها و وعده‌های غذایی هر روز، یکجا." />
-      <button className="button muted walk-cta" onClick={() => navigate('/walk')}><MapPin size={16} /> آغاز پیاده‌روی</button>
+      <PageTitle
+        title={staff ? 'تقویم باشگاه' : 'تقویم من'}
+        text={user.role === 'ADMIN' ? 'همه جلسات، رویدادها و مسابقات باشگاه در یک نما.'
+          : staff ? 'جلسات تدریس تو، رویدادها و مسابقات باشگاه.'
+          : 'تمرین‌ها، کلاس‌ها، رویدادها و وعده‌های غذایی هر روز، یکجا.'} />
+      {!staff && <button className="button muted walk-cta" onClick={() => navigate('/walk')}><MapPin size={16} /> آغاز پیاده‌روی</button>}
     </div>
     <Message text={message} />
     <MonthCalendar dayMap={dayMap} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
-    <DayAgenda date={selectedDate} data={selected} meals={meals} onStartWorkout={(planId, dayId) => navigate(`/workout/${planId}/${dayId}`)} />
+    <DayAgenda date={selectedDate} data={selected} meals={meals} canStart={!staff}
+      onStartWorkout={(planId, dayId) => navigate(`/workout/${planId}/${dayId}`)} />
   </section>
 }
 
@@ -2500,7 +2549,7 @@ function MonthCalendar({ dayMap, selectedDate, onSelectDate }) {
 
 /** Everything happening on the selected day, grouped by kind, with the
  * actions that belong to each (start the workout, see the class). */
-function DayAgenda({ date, data, meals, onStartWorkout }) {
+function DayAgenda({ date, data, meals, onStartWorkout, canStart = true }) {
   const totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0)
   const isEmpty = !data.workouts.length && !data.classes.length && !data.events.length && !meals.length
 
@@ -2523,9 +2572,11 @@ function DayAgenda({ date, data, meals, onStartWorkout }) {
             <strong>{day.label || 'تمرین امروز'}</strong>
             <small>{plan.title} · {toPersianDigits(day.items.length)} حرکت</small>
           </div>
-          {day.date > todayIso()
-            ? <span className="capacity agenda-future">از {formatDate(day.date)} فعال می‌شود</span>
-            : <button className="button primary" onClick={() => onStartWorkout(plan.id, day.id)}><Play size={15} /> شروع تمرین</button>}
+          {!canStart
+            ? <span className="capacity">فقط مشاهده</span>
+            : day.date > todayIso()
+              ? <span className="capacity agenda-future">از {formatDate(day.date)} فعال می‌شود</span>
+              : <button className="button primary" onClick={() => onStartWorkout(plan.id, day.id)}><Play size={15} /> شروع تمرین</button>}
         </div>
         <div className="agenda-exercises">
           {day.items.map((item) => (
@@ -2543,7 +2594,8 @@ function DayAgenda({ date, data, meals, onStartWorkout }) {
           <span className="agenda-icon"><CalendarDays size={18} /></span>
           <div>
             <strong>{b.session_detail.gym_class}</strong>
-            <small>{b.session_detail.trainer} · {toPersianDigits(b.session_detail.start_time?.slice(0, 5))} تا {toPersianDigits(b.session_detail.end_time?.slice(0, 5))}</small>
+            <small>{b.session_detail.trainer} · {toPersianDigits(b.session_detail.start_time?.slice(0, 5))} تا {toPersianDigits(b.session_detail.end_time?.slice(0, 5))}
+              {b.capacity != null && ` · ${toPersianDigits(b.booked)} از ${toPersianDigits(b.capacity)} نفر`}</small>
           </div>
           <Link className="button muted" to="/classes">جزئیات کلاس</Link>
         </div>
@@ -3422,6 +3474,24 @@ function UserManager({ users, members, trainers, onChanged, setMessage }) {
     } catch (e) { setMessage(errorMessage(e)) }
   }
 
+  const [editing, setEditing] = useState(null)     // user being edited
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '' })
+  const [confirmId, setConfirmId] = useState(null) // user pending deletion
+
+  const startEdit = (u) => { setEditing(u.id); setEditForm({ full_name: u.full_name, phone: u.phone || '' }) }
+  const saveEdit = async (id) => {
+    try {
+      await api.patch(`/auth/users/${id}/`, editForm)
+      setEditing(null); setMessage('حساب به‌روزرسانی شد.'); onChanged()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+  const removeUser = async (id) => {
+    try {
+      await api.delete(`/auth/users/${id}/`)
+      setConfirmId(null); setMessage('حساب حذف شد.'); onChanged()
+    } catch (e) { setMessage(errorMessage(e)) }
+  }
+
   const [assignForm, setAssignForm] = useState({ member: '', trainer: '' })
   const [assignBusy, setAssignBusy] = useState(false)
   const createAssignment = async (event) => {
@@ -3464,12 +3534,31 @@ function UserManager({ users, members, trainers, onChanged, setMessage }) {
       </form>
     </Card>
     <Card title="کاربران باشگاه">
-      {users.length ? users.map((u) => <div className="list-row" key={u.id}>
-        <span className="avatar">{u.full_name?.[0]}</span>
-        <div><strong>{u.full_name}</strong><small>{u.email} · {roleLabel[u.role]}</small></div>
-        <span className={u.is_active ? 'status active' : 'status expired'}>{u.is_active ? 'فعال' : 'غیرفعال'}</span>
-        <button className="icon-button" onClick={() => toggleActive(u)} title={u.is_active ? 'غیرفعال‌سازی' : 'فعال‌سازی'}>{u.is_active ? <UserX size={16} /> : <UserCheck size={16} />}</button>
-      </div>) : <Empty text="کاربری ثبت نشده است." />}
+      {users.length ? users.map((u) => {
+        if (editing === u.id) return <div className="list-row user-edit-row" key={u.id}>
+          <input value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} placeholder="نام و نام خانوادگی" />
+          <input value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} placeholder="شماره تماس" />
+          <button className="icon-button" title="ذخیره" onClick={() => saveEdit(u.id)}><Check size={16} /></button>
+          <button className="icon-button" title="انصراف" onClick={() => setEditing(null)}><X size={16} /></button>
+        </div>
+        if (confirmId === u.id) return <div className="list-row confirm-bar" key={u.id}>
+          <span>«{u.full_name}» و همه سوابقش (رزرو، حضور، برنامه‌ها و پرداخت‌ها) برای همیشه حذف شود؟</span>
+          <button className="button muted" onClick={() => setConfirmId(null)}>انصراف</button>
+          <button className="button danger" onClick={() => removeUser(u.id)}><Trash2 size={15} /> حذف</button>
+        </div>
+        return <div className="list-row" key={u.id}>
+          <span className="avatar">{u.full_name?.[0]}</span>
+          <div><strong>{u.full_name}</strong><small>{u.email} · {roleLabel[u.role]}</small></div>
+          <span className={u.is_active ? 'status active' : 'status expired'}>{u.is_active ? 'فعال' : 'غیرفعال'}</span>
+          <button className="icon-button" onClick={() => startEdit(u)} title="ویرایش"><Edit2 size={15} /></button>
+          <button className="icon-button" onClick={() => toggleActive(u)} title={u.is_active ? 'غیرفعال‌سازی' : 'فعال‌سازی'}>{u.is_active ? <UserX size={16} /> : <UserCheck size={16} />}</button>
+          <button className="icon-button" onClick={() => setConfirmId(u.id)} title="حذف دائمی"><Trash2 size={15} /></button>
+        </div>
+      }) : <Empty text="کاربری ثبت نشده است." />}
+      <p className="reward-hint user-manage-note">
+        غیرفعال‌سازی جلوی ورود را می‌گیرد و سوابق را نگه می‌دارد — برای بیشتر موارد همان کافی است.
+        حذف دائمی است و رزروها، حضورها و پرداخت‌های آن فرد را هم پاک می‌کند، پس گزارش‌های باشگاه هم تغییر می‌کنند.
+      </p>
     </Card>
   </div>
 }
